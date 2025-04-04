@@ -11,7 +11,9 @@ dependencies = [
     "pyserial",
     "tqdm",
     "psutil",
-    "pycryptodome"
+    "pycryptodome",
+    "pycrypto",
+    "cryptography"
 ]
 
 [tool.black]
