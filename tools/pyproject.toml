@@ -10,7 +10,8 @@ dependencies = [
     "loguru",
     "pyserial",
     "tqdm",
-    "psutil"
+    "psutil",
+    "pycryptodome"
 ]
 
 [tool.black]
