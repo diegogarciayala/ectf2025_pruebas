@@ -13,9 +13,10 @@ dependencies = [
     "pyserial",
     "tqdm",
     "psutil",
-    "pycryptodome",
     "pycrypto",
-    "cryptography"
+    "cryptography",
+    "crypto>=1.4.1",
+    "pycryptodome>=3.22.0",
 ]
 [tool.black]
 include = '\.pyi?$'
