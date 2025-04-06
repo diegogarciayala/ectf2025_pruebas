@@ -13,6 +13,7 @@
 /*********************** INCLUDES *************************/
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include "mxc_device.h"
 #include "status_led.h"
@@ -25,7 +26,14 @@
 /* Code between this #ifdef and the subsequent #endif will
 *  be ignored by the compiler if CRYPTO_EXAMPLE is not set in
 *  the project.mk file. */
+#ifdef CRYPTO_EXAMPLE
 #include "simple_crypto.h"
+
+// Forward declarations for crypto functions
+extern int encrypt_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *ciphertext);
+extern int decrypt_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *plaintext);
+extern int hash(void *data, size_t len, uint8_t *hash_out);
+#endif
 
 /**********************************************************
  ******************* PRIMITIVE TYPES **********************
@@ -154,7 +162,9 @@ char output_buf[128];
  * be called from your main */
 void boot_flag() {
     // If the program calls this function, the flag will be read and printed
-    print_debug("boot flag: %p\n", boot_flag);
+    char flag_buf[64];
+    sprintf(flag_buf, "boot flag: %p", boot_flag);
+    print_debug(flag_buf);
 }
 
 /**********************************************************
@@ -174,6 +184,7 @@ void create_nonce_from_seq_channel(uint32_t seq_num, uint32_t channel_id, uint8_
     memcpy(nonce + sizeof(uint32_t), &channel_id, sizeof(uint32_t));
 }
 
+#ifdef CRYPTO_EXAMPLE
 /**
  * @brief Implement AES-CTR encryption/decryption
  *
@@ -302,6 +313,7 @@ int derive_key_from_master(uint8_t *master_key, const char *context,
     context_message[context_len] = 0x01;
     return aes_cmac(master_key, context_message, context_len + 1, derived_key + CMAC_SIZE);
 }
+#endif
 
 /**********************************************************
  ******************** HELPER FUNCTIONS ********************
@@ -338,20 +350,26 @@ int find_free_channel_slot() {
     return -1;
 }
 
-void print_hex_debug(const uint8_t *data, size_t len) {
-    for (size_t i = 0; i < len; i++) {
-        sprintf(output_buf + (i * 2), "%02x", data[i]);
+// Custom function for printing hex data in debug
+void custom_print_hex(uint8_t *data, size_t len) {
+    char hex_buf[256];
+    size_t pos = 0;
+
+    for (size_t i = 0; i < len && pos < 250; i++) {
+        pos += sprintf(hex_buf + pos, "%02x", data[i]);
     }
-    output_buf[len * 2] = '\0';
-    print_debug("%s", output_buf);
+
+    print_debug(hex_buf);
 }
 
 // This function lists the active channel subscriptions
 void list_channels() {
     list_response_t resp = {0};
     uint32_t channel_count = 0;
+    char buf[64];
 
-    print_debug("Listing channels...\n");
+    sprintf(buf, "Listing channels...");
+    print_debug(buf);
 
     // First channel is always the emergency broadcast
     resp.channel_info[channel_count].channel = EMERGENCY_CHANNEL;
@@ -382,22 +400,24 @@ void list_channels() {
 
 // This function is called when the decoder receives a subscription update
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_data) {
-    char output_buf[128] = {0};
+    char buf[64];
     int slot;
 
-    print_debug("Updating subscription\n");
+    sprintf(buf, "Updating subscription");
+    print_debug(buf);
 
     // Validate the subscription data
-    sprintf(output_buf, "Subscription: Device ID=%u, Channel=%u\n",
+    sprintf(buf, "Subscription: Device ID=%u, Channel=%u",
             sub_data->decoder_id, sub_data->channel);
-    print_debug(output_buf);
+    print_debug(buf);
 
     // Check if the subscription is for this device
     if (sub_data->decoder_id != DEVICE_ID) {
-        print_error("Subscription not for this device\n");
+        print_error("Subscription not for this device");
         return -1;
     }
 
+#ifdef CRYPTO_EXAMPLE
     // Verify the subscription using signature key
     uint8_t *subscription_data = (uint8_t *)sub_data;
     size_t subscription_data_len = pkt_len - CMAC_SIZE;
@@ -405,14 +425,15 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
 
     if (verify_aes_cmac(decoder_keys.signature_key, subscription_data,
                       subscription_data_len, signature) != 1) {
-        print_error("Invalid subscription signature\n");
+        print_error("Invalid subscription signature");
         return -1;
     }
+#endif
 
     // Find a free slot for the subscription
     slot = find_free_channel_slot();
     if (slot < 0) {
-        print_error("No free subscription slots\n");
+        print_error("No free subscription slots");
         return -1;
     }
 
@@ -426,8 +447,9 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
     flash_simple_erase_page(FLASH_STATUS_ADDR);
     flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
 
-    print_debug("Subscription updated and saved\n");
+    print_debug("Subscription updated and saved");
 
+#ifdef CRYPTO_EXAMPLE
     // Derive the channel key if needed
     if (sub_data->channel != EMERGENCY_CHANNEL) {
         char context[20];
@@ -435,44 +457,46 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
         derive_key_from_master(decoder_keys.master_key, context, NULL,
                              channel_keys[sub_data->channel]);
 
-        print_debug("Channel key derived\n");
-        print_debug("Key: ");
-        print_hex_debug(channel_keys[sub_data->channel], 16);
-        print_debug("\n");
+        print_debug("Channel key derived");
+        sprintf(buf, "Key: ");
+        print_debug(buf);
+        custom_print_hex(channel_keys[sub_data->channel], 16);
     }
+#endif
 
     return 0;
 }
 
 // This function is called when the decoder receives a frame to decode
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
-    char output_buf[128] = {0};
+    char buf[64];
     uint8_t decrypted_data[FRAME_SIZE + 12]; // Frame + timestamp + seq_num
     int result;
 
     // Get channel ID from the frame
     channel_id_t channel = new_frame->channel;
 
-    sprintf(output_buf, "Decoding frame for channel %u\n", channel);
-    print_debug(output_buf);
+    sprintf(buf, "Decoding frame for channel %u", channel);
+    print_debug(buf);
 
     // Check that we are subscribed to the channel
-    print_debug("Checking subscription\n");
+    print_debug("Checking subscription");
     if (!is_subscribed(channel)) {
         STATUS_LED_RED();
-        sprintf(output_buf, "Receiving unsubscribed channel data: %u\n", channel);
-        print_error(output_buf);
+        sprintf(buf, "Receiving unsubscribed channel data: %u", channel);
+        print_error(buf);
         return -1;
     }
 
-    print_debug("Subscription Valid\n");
+    print_debug("Subscription Valid");
 
+#ifdef CRYPTO_EXAMPLE
     // Cast to our custom frame structure for easier access
     encoded_frame_t *encoded_frame = (encoded_frame_t *)new_frame;
 
     // Check sequence number to prevent replay attacks
     if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
-        print_error("Possible replay attack detected\n");
+        print_error("Possible replay attack detected");
         return -1;
     }
 
@@ -481,7 +505,7 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 
     // Verify that encoder ID matches
     if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
-        print_error("Invalid encoder ID\n");
+        print_error("Invalid encoder ID");
         return -1;
     }
 
@@ -501,8 +525,8 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
                           encrypted_data_size, nonce, decrypted_data);
 
     if (result != 0) {
-        sprintf(output_buf, "Decryption failed with error %d\n", result);
-        print_error(output_buf);
+        sprintf(buf, "Decryption failed with error %d", result);
+        print_error(buf);
         return -1;
     }
 
@@ -514,15 +538,16 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 
     // Verify sequence number in encrypted data matches header
     if (seq_num_check != encoded_frame->seq_num) {
-        print_error("Sequence number mismatch\n");
+        print_error("Sequence number mismatch");
         return -1;
     }
 
     // Copy just the frame data (without timestamp and seq_num) to the output
     memcpy(new_frame->data, decrypted_data, encrypted_data_size - 12);
+#endif
 
     // Send the decrypted data back to the host
-    write_packet(DECODE_MSG, new_frame->data, encrypted_data_size - 12);
+    write_packet(DECODE_MSG, new_frame->data, frame_len > 12 ? frame_len - 12 : 0);
     return 0;
 }
 
@@ -541,7 +566,7 @@ void init() {
         *  This data will be persistent across reboots of the decoder. Whenever the decoder
         *  processes a subscription update, this data will be updated.
         */
-        print_debug("First boot. Setting flash...\n");
+        print_debug("First boot. Setting flash...");
 
         decoder_status.first_boot = FLASH_FIRST_BOOT;
 
@@ -559,6 +584,7 @@ void init() {
         flash_simple_erase_page(FLASH_STATUS_ADDR);
         flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
 
+#ifdef CRYPTO_EXAMPLE
         // Initialize decoder keys
         // In a real system, these would be securely provisioned
         // For this CTF, we'll use hardcoded values for testing
@@ -569,6 +595,7 @@ void init() {
         // Save keys to flash
         flash_simple_erase_page(FLASH_KEYS_ADDR);
         flash_simple_write(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
+#endif
     } else {
         // Read stored keys from flash
         flash_simple_read(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
@@ -596,29 +623,28 @@ void crypto_example() {
     uint8_t decrypted[AES_BLOCK_SIZE + 1] = {0};
     uint8_t hash_out[HASH_SIZE] = {0};
     char data[AES_BLOCK_SIZE] = "Hello eCTF 2025";
-    char output_buf[128] = {0};
+    char buf[64];
 
-    print_debug("============== CRYPTO EXAMPLE ==============\n");
-    print_debug("Original data: ");
-    print_debug(data);
-    print_debug("\n");
+    print_debug("============== CRYPTO EXAMPLE ==============");
+    sprintf(buf, "Original data: %s", data);
+    print_debug(buf);
 
     // Encrypt example data and print out
     encrypt_sym((uint8_t*)data, BLOCK_SIZE, key, ciphertext);
-    print_debug("Encrypted data: \n");
-    print_hex_debug(ciphertext, BLOCK_SIZE);
+    print_debug("Encrypted data: ");
+    custom_print_hex(ciphertext, BLOCK_SIZE);
 
     // Hash example encryption results
     hash(ciphertext, BLOCK_SIZE, hash_out);
 
     // Output hash result
-    print_debug("Hash result: \n");
-    print_hex_debug(hash_out, HASH_SIZE);
+    print_debug("Hash result: ");
+    custom_print_hex(hash_out, HASH_SIZE);
 
     // Decrypt the encrypted message and print out
     decrypt_sym(ciphertext, BLOCK_SIZE, key, decrypted);
-    sprintf(output_buf, "Decrypted message: %s\n", decrypted);
-    print_debug(output_buf);
+    sprintf(buf, "Decrypted message: %s", decrypted);
+    print_debug(buf);
 }
 #endif  //CRYPTO_EXAMPLE
 
@@ -627,7 +653,7 @@ void crypto_example() {
  **********************************************************/
 
 int main(void) {
-    char output_buf[128] = {0};
+    char buf[64];
     uint8_t uart_buf[100];
     msg_type_t cmd;
     int result;
@@ -636,11 +662,11 @@ int main(void) {
     // initialize the device
     init();
 
-    print_debug("Decoder Booted!\n");
+    print_debug("Decoder Booted!");
 
     // process commands forever
     while (1) {
-        print_debug("Ready\n");
+        print_debug("Ready");
 
         STATUS_LED_GREEN();
 
@@ -648,7 +674,7 @@ int main(void) {
 
         if (result < 0) {
             STATUS_LED_ERROR();
-            print_error("Failed to receive cmd from host\n");
+            print_error("Failed to receive cmd from host");
             continue;
         }
 
@@ -686,8 +712,8 @@ int main(void) {
         // Handle bad command
         default:
             STATUS_LED_ERROR();
-            sprintf(output_buf, "Invalid Command: %c\n", cmd);
-            print_error(output_buf);
+            sprintf(buf, "Invalid Command: %c", cmd);
+            print_error(buf);
             break;
         }
     }
