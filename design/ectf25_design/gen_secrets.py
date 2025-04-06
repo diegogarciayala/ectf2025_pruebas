@@ -1,83 +1,122 @@
-# gen_secrets.py
+"""
+Author: TrustLab Team
+Date: 2025
+
+This source file is part of a secure satellite TV transmission system for MITRE's 2025
+Embedded System CTF (eCTF). This code implements the key generation and secrets
+management for the satellite TV system.
+
+Copyright: Copyright (c) 2025
+"""
 
 import argparse
-import base64
 import json
+import base64
+import os
 from pathlib import Path
-from cryptography.hazmat.primitives.cmac import CMAC
-from cryptography.hazmat.primitives.ciphers import algorithms
+from Crypto.Random import get_random_bytes
+
+from loguru import logger
+from utils import KEY_SIZE, bytes_to_hex
 
 
-def derive_cmac(key: bytes, data: bytes) -> bytes:
-    """Genera un CMAC utilizando AES y devuelve el valor final"""
-    c = CMAC(algorithms.AES(key))
-    c.update(data)
-    return c.finalize()
+def gen_secrets(channels: list[int]) -> bytes:
+    """Generate the contents secrets file
 
+    This will be passed to the Encoder, ectf25_design.gen_subscription, and the build
+    process of the decoder
 
-def gen_secrets(channels: list[int], K_master: bytes, secrets_file: Path) -> dict:
-    """Genera el archivo de secretos con las claves de canal derivadas a partir de la clave maestra.
+    :param channels: List of channel numbers that will be valid in this deployment.
+        Channel 0 is the emergency broadcast, which will always be valid and will
+        NOT be included in this list
 
-    :param channels: Lista de canales válidos.
-    :param K_master: La clave maestra que se utiliza para derivar las claves.
-    :param secrets_file: Ruta donde se guarda el archivo de secretos.
-
-    :returns: Un diccionario con los secretos generados.
+    :returns: Contents of the secrets file
     """
-    secrets = {}
-    channel_keys = {}
-    for i, channel_id in enumerate(channels):
-        if i % 2 == 0:
-            # Derivar la clave K1 usando el índice del canal
-            input_for_k1 = i.to_bytes(10, byteorder="big")
-            K1 = derive_cmac(K_master, input_for_k1)
-            print(f"k1_key --> {K1}")
-
-        # Derivar la clave del canal usando K1 y el ID del canal
-        channel_key = derive_cmac(K1, channel_id.to_bytes(10, byteorder="big"))
-        channel_keys[str(channel_id)] = base64.b64encode(channel_key).decode()
-
-    secrets['channels'] = channels
-    secrets['channel_keys'] = channel_keys
-    with open(secrets_file, 'w') as f:
-        json.dump(secrets, f, indent=4)
-
-    print(f"Secretes written to {secrets_file}")
-    return secrets
+    # Generate master key for the system (32 bytes for AES-256)
+    master_key = get_random_bytes(KEY_SIZE)
+    
+    # Generate a unique encoder ID for the system
+    encoder_id = get_random_bytes(4)
+    
+    # Generate an initialization sequence number
+    initial_seq_num = 1
+    
+    # Create the secrets object with all the required cryptographic material
+    secrets = {
+        # List of valid channels
+        "channels": channels,
+        
+        # Master key (base64 encoded to ensure JSON compatibility)
+        "master_key": base64.b64encode(master_key).decode('ascii'),
+        
+        # Unique encoder identifier (base64 encoded)
+        "encoder_id": base64.b64encode(encoder_id).decode('ascii'),
+        
+        # Initial sequence number for anti-replay protection
+        "initial_seq_num": initial_seq_num,
+        
+        # System version and info - for potential future compatibility checks
+        "version": "1.0",
+        
+        # Include a signature key for subscription validation
+        "signature_key": base64.b64encode(get_random_bytes(KEY_SIZE)).decode('ascii'),
+    }
+    
+    # Log information about generated keys (for debugging only)
+    logger.debug(f"Generated master key: {bytes_to_hex(master_key)}")
+    logger.debug(f"Generated encoder ID: {bytes_to_hex(encoder_id)}")
+    
+    # Serialize to JSON and encode to bytes
+    return json.dumps(secrets).encode()
 
 
 def parse_args():
-    """Define y parse los argumentos de la línea de comandos"""
+    """Define and parse the command line arguments
+
+    NOTE: Your design must not change this function
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--force",
         "-f",
         action="store_true",
-        help="Forzar la creación del archivo de secretos, sobrescribiendo el archivo existente",
+        help="Force creation of secrets file, overwriting existing file",
     )
     parser.add_argument(
         "secrets_file",
         type=Path,
-        help="Ruta al archivo de secretos que se creará",
+        help="Path to the secrets file to be created",
     )
     parser.add_argument(
         "channels",
         nargs="+",
         type=int,
-        help="Canales soportados. El canal 0 (broadcast) siempre es válido y no estará presente en esta lista",
+        help="Supported channels. Channel 0 (broadcast) is always valid and will not"
+        " be provided in this list",
     )
     return parser.parse_args()
 
 
 def main():
-    """Función principal para generar secretos"""
+    """Main function of gen_secrets"""
+    # Parse the command line arguments
     args = parse_args()
 
-    # Agregar la clave maestra hardcodeada
-    K_master = b'my_sup3r53cur3_K1_m45ter'
-    secrets = gen_secrets(args.channels, K_master, args.secrets_file)
+    secrets = gen_secrets(args.channels)
 
-    print(f"Archivo de secretos generado en: {str(args.secrets_file.absolute())}")
+    # Print the generated secrets for your own debugging
+    # Attackers will NOT have access to the output of this, but feel free to remove
+    #
+    # NOTE: Printing sensitive data is generally not good security practice
+    logger.debug(f"Generated secrets: {secrets}")
+
+    # Open the file, erroring if the file exists unless the --force arg is provided
+    with open(args.secrets_file, "wb" if args.force else "xb") as f:
+        # Dump the secrets to the file
+        f.write(secrets)
+
+    # For your own debugging. Feel free to remove
+    logger.success(f"Wrote secrets to {str(args.secrets_file.absolute())}")
 
 
 if __name__ == "__main__":
