@@ -17,7 +17,7 @@ from pathlib import Path
 from Crypto.Random import get_random_bytes
 
 from loguru import logger
-from .utils import KEY_SIZE, bytes_to_hex
+from utils import KEY_SIZE, bytes_to_hex
 
 
 def gen_secrets(channels: list[int]) -> bytes:

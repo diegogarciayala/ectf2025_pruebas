@@ -16,7 +16,7 @@ import base64
 import time
 from Crypto.Random import get_random_bytes
 
-from .utils import (
+from utils import (
     aes_ctr_encrypt,
     derive_key_from_master,
     create_nonce_from_seq_channel,

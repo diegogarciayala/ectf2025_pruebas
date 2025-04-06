@@ -17,7 +17,7 @@ from pathlib import Path
 import time
 
 from loguru import logger
-from .utils import aes_cmac, bytes_to_hex
+from utils import aes_cmac, bytes_to_hex
 
 
 def gen_subscription(
@@ -49,12 +49,22 @@ def gen_subscription(
     subscription_data = struct.pack("<IQQI", device_id, start, end, channel)
     
     # Add encoder ID to the subscription for validation
+    # Convert bytearray to bytes if needed
+    if isinstance(encoder_id, bytearray):
+        encoder_id = bytes(encoder_id)
+    if isinstance(subscription_data, bytearray):
+        subscription_data = bytes(subscription_data)
+        
     subscription_with_id = encoder_id + subscription_data
     
     # Create a secure signature of the subscription using AES-CMAC
     signature = aes_cmac(signature_key, subscription_with_id)
     
     # Final subscription includes: encoder_id + subscription_data + signature
+    # Ensure signature is also in bytes format
+    if isinstance(signature, bytearray):
+        signature = bytes(signature)
+    
     complete_subscription = subscription_with_id + signature
     
     logger.debug(f"Subscription data: device_id={device_id}, start={start}, end={end}, channel={channel}")

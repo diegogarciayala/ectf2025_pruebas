@@ -4,10 +4,11 @@
  * @brief   eCTF Secure Satellite TV Decoder Implementation
  * @date    2025
  *
- * This source file implements a secure decoder for satellite TV transmissions
- * as part of MITRE's 2025 Embedded System CTF (eCTF).
+ * This source file is part of an example system for MITRE's 2025 Embedded System CTF (eCTF).
+ * This code is being provided only for educational purposes for the 2025 MITRE eCTF competition,
+ * and may not meet MITRE standards for quality. Use this code at your own risk!
  *
- * @copyright Copyright (c) 2025
+ * @copyright Copyright (c) 2025 The MITRE Corporation
  */
 
 /*********************** INCLUDES *************************/
@@ -352,24 +353,24 @@ int find_free_channel_slot() {
 
 // Custom function for printing hex data in debug
 void custom_print_hex(uint8_t *data, size_t len) {
-    char hex_buf[256];
     size_t pos = 0;
 
-    for (size_t i = 0; i < len && pos < 250; i++) {
-        pos += sprintf(hex_buf + pos, "%02x", data[i]);
+    for (size_t i = 0; i < len && pos < sizeof(output_buf)-3; i++) {
+        pos += sprintf(output_buf + pos, "%02x", data[i]);
     }
 
-    print_debug(hex_buf);
+    output_buf[pos] = '\0';
+    print_debug(output_buf);
 }
 
 // This function lists the active channel subscriptions
 void list_channels() {
     list_response_t resp = {0};
     uint32_t channel_count = 0;
-    char buf[64];
+    char debug_buf[64];
 
-    sprintf(buf, "Listing channels...");
-    print_debug(buf);
+    sprintf(debug_buf, "Listing channels...");
+    print_debug(debug_buf);
 
     // First channel is always the emergency broadcast
     resp.channel_info[channel_count].channel = EMERGENCY_CHANNEL;
@@ -400,16 +401,16 @@ void list_channels() {
 
 // This function is called when the decoder receives a subscription update
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_data) {
-    char buf[64];
+    char debug_buf[64];
     int slot;
 
-    sprintf(buf, "Updating subscription");
-    print_debug(buf);
+    sprintf(debug_buf, "Updating subscription");
+    print_debug(debug_buf);
 
     // Validate the subscription data
-    sprintf(buf, "Subscription: Device ID=%u, Channel=%u",
+    sprintf(debug_buf, "Subscription: Device ID=%u, Channel=%u",
             sub_data->decoder_id, sub_data->channel);
-    print_debug(buf);
+    print_debug(debug_buf);
 
     // Check if the subscription is for this device
     if (sub_data->decoder_id != DEVICE_ID) {
@@ -458,8 +459,8 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
                              channel_keys[sub_data->channel]);
 
         print_debug("Channel key derived");
-        sprintf(buf, "Key: ");
-        print_debug(buf);
+        sprintf(debug_buf, "Key: ");
+        print_debug(debug_buf);
         custom_print_hex(channel_keys[sub_data->channel], 16);
     }
 #endif
@@ -469,22 +470,22 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
 
 // This function is called when the decoder receives a frame to decode
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
-    char buf[64];
+    char debug_buf[64];
     uint8_t decrypted_data[FRAME_SIZE + 12]; // Frame + timestamp + seq_num
     int result;
 
     // Get channel ID from the frame
     channel_id_t channel = new_frame->channel;
 
-    sprintf(buf, "Decoding frame for channel %u", channel);
-    print_debug(buf);
+    sprintf(debug_buf, "Decoding frame for channel %u", channel);
+    print_debug(debug_buf);
 
     // Check that we are subscribed to the channel
     print_debug("Checking subscription");
     if (!is_subscribed(channel)) {
         STATUS_LED_RED();
-        sprintf(buf, "Receiving unsubscribed channel data: %u", channel);
-        print_error(buf);
+        sprintf(debug_buf, "Receiving unsubscribed channel data: %u", channel);
+        print_error(debug_buf);
         return -1;
     }
 
@@ -525,8 +526,8 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
                           encrypted_data_size, nonce, decrypted_data);
 
     if (result != 0) {
-        sprintf(buf, "Decryption failed with error %d", result);
-        print_error(buf);
+        sprintf(debug_buf, "Decryption failed with error %d", result);
+        print_error(debug_buf);
         return -1;
     }
 
@@ -623,11 +624,11 @@ void crypto_example() {
     uint8_t decrypted[AES_BLOCK_SIZE + 1] = {0};
     uint8_t hash_out[HASH_SIZE] = {0};
     char data[AES_BLOCK_SIZE] = "Hello eCTF 2025";
-    char buf[64];
+    char debug_buf[64];
 
     print_debug("============== CRYPTO EXAMPLE ==============");
-    sprintf(buf, "Original data: %s", data);
-    print_debug(buf);
+    sprintf(debug_buf, "Original data: %s", data);
+    print_debug(debug_buf);
 
     // Encrypt example data and print out
     encrypt_sym((uint8_t*)data, BLOCK_SIZE, key, ciphertext);
@@ -643,8 +644,8 @@ void crypto_example() {
 
     // Decrypt the encrypted message and print out
     decrypt_sym(ciphertext, BLOCK_SIZE, key, decrypted);
-    sprintf(buf, "Decrypted message: %s", decrypted);
-    print_debug(buf);
+    sprintf(debug_buf, "Decrypted message: %s", decrypted);
+    print_debug(debug_buf);
 }
 #endif  //CRYPTO_EXAMPLE
 
@@ -653,7 +654,7 @@ void crypto_example() {
  **********************************************************/
 
 int main(void) {
-    char buf[64];
+    char debug_buf[64];
     uint8_t uart_buf[100];
     msg_type_t cmd;
     int result;
@@ -712,8 +713,8 @@ int main(void) {
         // Handle bad command
         default:
             STATUS_LED_ERROR();
-            sprintf(buf, "Invalid Command: %c", cmd);
-            print_error(buf);
+            sprintf(debug_buf, "Invalid Command: %c", cmd);
+            print_error(debug_buf);
             break;
         }
     }
