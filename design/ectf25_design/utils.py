@@ -52,25 +52,18 @@ def derive_key_from_master(master_key, context, salt=None):
     elif isinstance(salt, bytearray):
         salt = bytes(salt)
 
-    # Create CMAC object with the master key
-    cmac = CMAC.new(master_key, ciphermod=AES)
-
-    # Update with salt and context
-    cmac.update(salt + context)
-
-    # Generate first block
-    derived_key = cmac.digest()
+    # Use our aes_cmac function which handles bytearray issues
+    combined_input = bytes(salt + context)
+    derived_key = aes_cmac(master_key, combined_input)
 
     # If we need more bytes, continue with counter mode derivation
     if KEY_SIZE > len(derived_key):
-        # Create a new CMAC with the master key
-        cmac = CMAC.new(master_key, ciphermod=AES)
-
-        # Update with the first derived block and context
-        cmac.update(derived_key + context)
+        # Create a second derived block
+        second_input = bytes(derived_key + context)
+        second_block = aes_cmac(master_key, second_input)
 
         # Append the second block
-        derived_key += cmac.digest()
+        derived_key = bytes(derived_key + second_block)
 
     # Return the truncated or full key depending on KEY_SIZE
     return derived_key[:KEY_SIZE]
@@ -156,9 +149,29 @@ def aes_cmac(key, message):
     if isinstance(message, bytearray):
         message = bytes(message)
 
-    cmac = CMAC.new(key, ciphermod=AES)
-    cmac.update(message)
-    return cmac.digest()
+    try:
+        # Try to process the message directly
+        cmac = CMAC.new(key, ciphermod=AES)
+        cmac.update(message)
+        return bytes(cmac.digest())  # Convert to bytes just in case it's a bytearray
+    except TypeError as e:
+        # If there's a TypeError about bytearrays, try an alternative approach
+        if "bytearray" in str(e):
+            # Process the message in smaller chunks, converting each chunk to bytes
+            cmac = CMAC.new(key, ciphermod=AES)
+            chunk_size = 16  # AES block size
+            for i in range(0, len(message), chunk_size):
+                chunk = message[i:i + chunk_size]
+                if isinstance(chunk, bytearray):
+                    chunk = bytes(chunk)
+                cmac.update(chunk)
+            result = cmac.digest()
+            if isinstance(result, bytearray):
+                result = bytes(result)
+            return result
+        else:
+            # Re-raise if it's not a bytearray issue
+            raise
 
 
 def verify_aes_cmac(key, message, tag):
@@ -181,11 +194,36 @@ def verify_aes_cmac(key, message, tag):
     if isinstance(tag, bytearray):
         tag = bytes(tag)
 
-    cmac = CMAC.new(key, ciphermod=AES)
-    cmac.update(message)
     try:
+        # Try to verify directly
+        cmac = CMAC.new(key, ciphermod=AES)
+        cmac.update(message)
         cmac.verify(tag)
         return True
+    except TypeError as e:
+        # If there's a TypeError about bytearrays, try an alternative approach
+        if "bytearray" in str(e):
+            try:
+                # Process the message in smaller chunks, converting each chunk to bytes
+                cmac = CMAC.new(key, ciphermod=AES)
+                chunk_size = 16  # AES block size
+                for i in range(0, len(message), chunk_size):
+                    chunk = message[i:i + chunk_size]
+                    if isinstance(chunk, bytearray):
+                        chunk = bytes(chunk)
+                    cmac.update(chunk)
+
+                # Convert tag to bytes if needed
+                if isinstance(tag, bytearray):
+                    tag = bytes(tag)
+
+                cmac.verify(tag)
+                return True
+            except ValueError:
+                return False
+        else:
+            # Re-raise if it's not a bytearray issue
+            raise
     except ValueError:
         return False
 
