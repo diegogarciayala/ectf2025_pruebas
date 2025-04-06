@@ -17,7 +17,7 @@ from pathlib import Path
 import time
 
 from loguru import logger
-from utils import aes_cmac, bytes_to_hex
+from .utils import aes_cmac, bytes_to_hex
 
 
 def gen_subscription(
