@@ -34,38 +34,47 @@ def gen_secrets(channels: list[int]) -> bytes:
     """
     # Generate master key for the system (32 bytes for AES-256)
     master_key = get_random_bytes(KEY_SIZE)
-    
+    if isinstance(master_key, bytearray):
+        master_key = bytes(master_key)
+
     # Generate a unique encoder ID for the system
     encoder_id = get_random_bytes(4)
-    
+    if isinstance(encoder_id, bytearray):
+        encoder_id = bytes(encoder_id)
+
     # Generate an initialization sequence number
     initial_seq_num = 1
-    
+
+    # Generate the signature key
+    signature_key = get_random_bytes(KEY_SIZE)
+    if isinstance(signature_key, bytearray):
+        signature_key = bytes(signature_key)
+
     # Create the secrets object with all the required cryptographic material
     secrets = {
         # List of valid channels
         "channels": channels,
-        
+
         # Master key (base64 encoded to ensure JSON compatibility)
         "master_key": base64.b64encode(master_key).decode('ascii'),
-        
+
         # Unique encoder identifier (base64 encoded)
         "encoder_id": base64.b64encode(encoder_id).decode('ascii'),
-        
+
         # Initial sequence number for anti-replay protection
         "initial_seq_num": initial_seq_num,
-        
+
         # System version and info - for potential future compatibility checks
         "version": "1.0",
-        
+
         # Include a signature key for subscription validation
-        "signature_key": base64.b64encode(get_random_bytes(KEY_SIZE)).decode('ascii'),
+        "signature_key": base64.b64encode(signature_key).decode('ascii'),
     }
-    
+
     # Log information about generated keys (for debugging only)
     logger.debug(f"Generated master key: {bytes_to_hex(master_key)}")
     logger.debug(f"Generated encoder ID: {bytes_to_hex(encoder_id)}")
-    
+
     # Serialize to JSON and encode to bytes
     return json.dumps(secrets).encode()
 
@@ -92,7 +101,7 @@ def parse_args():
         nargs="+",
         type=int,
         help="Supported channels. Channel 0 (broadcast) is always valid and will not"
-        " be provided in this list",
+             " be provided in this list",
     )
     return parser.parse_args()
 

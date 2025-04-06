@@ -34,24 +34,35 @@ class Encoder:
         """
         # Parse the secrets JSON
         secrets_json = json.loads(secrets)
-        
+
         # Extract and decode the cryptographic material
         self.master_key = base64.b64decode(secrets_json["master_key"])
         self.encoder_id = base64.b64decode(secrets_json["encoder_id"])
+
+        # Ensure master_key and encoder_id are in bytes format
+        if isinstance(self.master_key, bytearray):
+            self.master_key = bytes(self.master_key)
+        if isinstance(self.encoder_id, bytearray):
+            self.encoder_id = bytes(self.encoder_id)
+
         self.current_seq_num = secrets_json.get("initial_seq_num", 1)
-        
+
         # Keep track of valid channels
         self.valid_channels = [0] + secrets_json["channels"]  # Channel 0 is always valid
-        
+
         # Create a dictionary to store derived keys for each channel
         self.channel_keys = {}
-        
+
         # Pre-derive keys for each channel to improve performance
         for channel in self.valid_channels:
-            self.channel_keys[channel] = derive_key_from_master(
+            channel_key = derive_key_from_master(
                 self.master_key,
                 f"CHANNEL_{channel}"
             )
+            # Ensure channel key is in bytes format
+            if isinstance(channel_key, bytearray):
+                channel_key = bytes(channel_key)
+            self.channel_keys[channel] = channel_key
 
     def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
         """The frame encoder function
@@ -72,27 +83,41 @@ class Encoder:
         # Validate that the requested channel is valid
         if channel not in self.valid_channels:
             raise ValueError(f"Channel {channel} is not valid")
-        
+
         # Increment sequence number for this frame
         seq_num = self.current_seq_num
         self.current_seq_num += 1
-        
+
         # Get the encryption key for this channel
         channel_key = self.channel_keys[channel]
-        
+
+        # Ensure all data used in encryption is in bytes format
+        if isinstance(channel_key, bytearray):
+            channel_key = bytes(channel_key)
+        if isinstance(frame, bytearray):
+            frame = bytes(frame)
+
         # Create a plaintext that includes the frame, timestamp, and sequence number
         plaintext = frame + struct.pack("<QI", timestamp, seq_num)
-        
+
         # Create a nonce using sequence number and channel ID
         nonce = create_nonce_from_seq_channel(seq_num, channel)
-        
+
         # Encrypt the frame using AES-CTR
         ciphertext, _ = aes_ctr_encrypt(channel_key, plaintext, nonce)
-        
+
         # Construct the final packet: header + ciphertext
         # Header: (seq_num, channel, encoder_id)
-        header = struct.pack("<II", seq_num, channel) + self.encoder_id
-        
+        encoder_id_bytes = self.encoder_id
+        if isinstance(encoder_id_bytes, bytearray):
+            encoder_id_bytes = bytes(encoder_id_bytes)
+
+        header = struct.pack("<II", seq_num, channel) + encoder_id_bytes
+
+        # Convert ciphertext to bytes if needed
+        if isinstance(ciphertext, bytearray):
+            ciphertext = bytes(ciphertext)
+
         # Return the complete encoded frame
         return header + ciphertext
 

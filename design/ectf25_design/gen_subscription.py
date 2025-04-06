@@ -21,7 +21,7 @@ from .utils import aes_cmac, bytes_to_hex
 
 
 def gen_subscription(
-    secrets: bytes, device_id: int, start: int, end: int, channel: int
+        secrets: bytes, device_id: int, start: int, end: int, channel: int
 ) -> bytes:
     """Generate the contents of a subscription.
 
@@ -35,42 +35,46 @@ def gen_subscription(
     """
     # Load the secrets file
     secrets_json = json.loads(secrets)
-    
+
     # Decode the master key and encoder ID from base64
     master_key = base64.b64decode(secrets_json["master_key"])
     encoder_id = base64.b64decode(secrets_json["encoder_id"])
     signature_key = base64.b64decode(secrets_json["signature_key"])
-    
+
     # Verify that the requested channel is valid
     if channel != 0 and channel not in secrets_json["channels"]:
         raise ValueError(f"Channel {channel} is not valid in this deployment")
-    
+
     # Create the subscription data structure
     subscription_data = struct.pack("<IQQI", device_id, start, end, channel)
-    
+
     # Add encoder ID to the subscription for validation
-    # Convert bytearray to bytes if needed
+    # Ensure all inputs are bytes, not bytearray
+    if isinstance(master_key, bytearray):
+        master_key = bytes(master_key)
+    if isinstance(signature_key, bytearray):
+        signature_key = bytes(signature_key)
     if isinstance(encoder_id, bytearray):
         encoder_id = bytes(encoder_id)
     if isinstance(subscription_data, bytearray):
         subscription_data = bytes(subscription_data)
-        
+
     subscription_with_id = encoder_id + subscription_data
-    
+
     # Create a secure signature of the subscription using AES-CMAC
     signature = aes_cmac(signature_key, subscription_with_id)
-    
+
     # Final subscription includes: encoder_id + subscription_data + signature
     # Ensure signature is also in bytes format
     if isinstance(signature, bytearray):
         signature = bytes(signature)
-    
+
     complete_subscription = subscription_with_id + signature
-    
+
     logger.debug(f"Subscription data: device_id={device_id}, start={start}, end={end}, channel={channel}")
     logger.debug(f"Encoder ID: {bytes_to_hex(encoder_id)}")
     logger.debug(f"Signature: {bytes_to_hex(signature)}")
-    
+
     return complete_subscription
 
 
