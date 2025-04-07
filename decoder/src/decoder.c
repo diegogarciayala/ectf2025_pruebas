@@ -154,6 +154,8 @@ uint8_t channel_keys[MAX_CHANNEL_COUNT][KEY_SIZE];
 // Buffer for debug output
 char output_buf[128];
 
+decoder_id_t DEVICE_ID = 0; // Inicializado a 0
+
 /**********************************************************
  ******************** REFERENCE FLAG **********************
  **********************************************************/
@@ -578,6 +580,10 @@ void init() {
             subscription[i].end_timestamp = DEFAULT_CHANNEL_TIMESTAMP;
             subscription[i].active = false;
         }
+
+
+				flash_simple_read(FLASH_DEVICE_ID_ADDR, &DEVICE_ID, sizeof(decoder_id_t));
+
 
         // Write the starting channel subscriptions into flash.
         memcpy(decoder_status.subscribed_channels, subscription, MAX_CHANNEL_COUNT*sizeof(channel_status_t));
