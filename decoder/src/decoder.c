@@ -63,7 +63,7 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define ENCODER_ID_SIZE 8
 #define NONCE_SIZE 8
 #define HEADER_SIZE 12  // 4-byte seq_num + 4-byte channel + 4-byte encoder_id
-#define DEVICE_ID 0x1234  // Hardcoded device ID for this decoder
+#define FLASH_DEVICE_ID_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (4 * MXC_FLASH_PAGE_SIZE))
 
 // Flash storage
 // Calculate the flash address where we will store channel info as the 2nd to last page available
