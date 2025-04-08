@@ -410,27 +410,17 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_dat
     // Así que creamos un puntero a raw bytes:
     uint8_t *raw_buf = (uint8_t *) sub_data;
 
-    // 1) Leer los primeros 8 bytes (encoder_id), que no nos hacen falta para la suscripción:
+    // 1) Leer 8 bytes de encoder_id (no usados)
     uint8_t encoder_id[8];
     memcpy(encoder_id, raw_buf, 8);
 
-    // 2) A partir de offset 8, tenemos la suscripción real (device_id + start + end + channel):
-    subscription_update_packet_t *real_sub_data =
-        (subscription_update_packet_t *) (raw_buf + 8);
+    // 2) La suscripción de 24 bytes está en offset 8
+    subscription_update_packet_t *sub_ptr =
+        (subscription_update_packet_t *)(raw_buf + 8);
 
-    // Mensaje de debug
-    char debug_buf[64];
-    print_debug("Updating subscription");
-
-    sprintf(debug_buf, "Subscription: Device ID=%u, Channel=%u",
-            real_sub_data->decoder_id, real_sub_data->channel);
-    print_debug(debug_buf);
-
-    // 3) Verificar si esta suscripción es para este decoder
-    if (real_sub_data->decoder_id != DEVICE_ID) {
-        print_error("Subscription not for this device");
-        return -1;
-    }
+    // 3) La firma (16 bytes) está en offset 8 + 24 = 32
+    size_t sub_len = 8 + sizeof(subscription_update_packet_t); // = 32
+    uint8_t *signature = raw_buf + sub_len; // offset 32
 
 #ifdef CRYPTO_EXAMPLE
     // 4) Verificar la firma

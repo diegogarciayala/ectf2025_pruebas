@@ -38,7 +38,7 @@ def gen_secrets(channels: list[int]) -> bytes:
         master_key = bytes(master_key)
 
     # Generate a unique encoder ID for the system
-    encoder_id = get_random_bytes(4)
+    encoder_id = get_random_bytes(8)
     if isinstance(encoder_id, bytearray):
         encoder_id = bytes(encoder_id)
 
