@@ -3,8 +3,6 @@
  * @author  ...
  * @brief   eCTF Secure Satellite TV Decoder Implementation
  * @date    2025
- *
- * ...
  */
 
 #include <stdio.h>
@@ -47,39 +45,39 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define HEADER_SIZE 12
 
 #define FLASH_DEVICE_ID_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (4 * MXC_FLASH_PAGE_SIZE))
-#define FLASH_STATUS_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (2 * MXC_FLASH_PAGE_SIZE))
-#define FLASH_KEYS_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (3 * MXC_FLASH_PAGE_SIZE))
+#define FLASH_STATUS_ADDR    ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (2 * MXC_FLASH_PAGE_SIZE))
+#define FLASH_KEYS_ADDR      ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (3 * MXC_FLASH_PAGE_SIZE))
 
 #pragma pack(push, 1)
 typedef struct {
     channel_id_t channel;
-    timestamp_t timestamp;
-    uint8_t data[FRAME_SIZE];
+    timestamp_t  timestamp;
+    uint8_t      data[FRAME_SIZE];
 } frame_packet_t;
 
 typedef struct {
     decoder_id_t decoder_id;
-    timestamp_t start_timestamp;
-    timestamp_t end_timestamp;
+    timestamp_t  start_timestamp;
+    timestamp_t  end_timestamp;
     channel_id_t channel;
 } subscription_update_packet_t;
 
 typedef struct {
     channel_id_t channel;
-    timestamp_t start;
-    timestamp_t end;
+    timestamp_t  start;
+    timestamp_t  end;
 } channel_info_t;
 
 typedef struct {
-    uint32_t n_channels;
+    uint32_t      n_channels;
     channel_info_t channel_info[MAX_CHANNEL_COUNT];
 } list_response_t;
 
 typedef struct {
     uint32_t seq_num;
     uint32_t channel;
-    uint8_t encoder_id[8];
-    uint8_t encrypted_data[];
+    uint8_t  encoder_id[8];
+    uint8_t  encrypted_data[];
 } encoded_frame_t;
 
 typedef struct {
@@ -91,23 +89,22 @@ typedef struct {
 #pragma pack(pop)
 
 typedef struct {
-    bool active;
+    bool         active;
     channel_id_t id;
-    timestamp_t start_timestamp;
-    timestamp_t end_timestamp;
+    timestamp_t  start_timestamp;
+    timestamp_t  end_timestamp;
 } channel_status_t;
 
 typedef struct {
-    uint32_t first_boot;
+    uint32_t         first_boot;
     channel_status_t subscribed_channels[MAX_CHANNEL_COUNT];
 } flash_entry_t;
 
-flash_entry_t decoder_status;
-uint32_t last_seq_num = 0;
+flash_entry_t  decoder_status;
+uint32_t       last_seq_num = 0;
 decoder_keys_t decoder_keys;
-uint8_t channel_keys[MAX_CHANNEL_COUNT][KEY_SIZE];
-
-char output_buf[128];
+uint8_t        channel_keys[MAX_CHANNEL_COUNT][KEY_SIZE];
+char           output_buf[128];
 
 #ifndef DECODER_ID
 #define DECODER_ID 0xDEADBEEF
@@ -143,7 +140,7 @@ bool is_subscribed(channel_id_t channel) {
         if (decoder_status.subscribed_channels[i].active &&
             decoder_status.subscribed_channels[i].id == channel &&
             decoder_status.subscribed_channels[i].start_timestamp <= current_time &&
-            decoder_status.subscribed_channels[i].end_timestamp >= current_time) {
+            decoder_status.subscribed_channels[i].end_timestamp   >= current_time) {
             return true;
         }
     }
@@ -178,8 +175,8 @@ void list_channels() {
 
     // canal 0 (emergency)
     resp.channel_info[channel_count].channel = EMERGENCY_CHANNEL;
-    resp.channel_info[channel_count].start = 0;
-    resp.channel_info[channel_count].end = 0xFFFFFFFFFFFFFFFF;
+    resp.channel_info[channel_count].start   = 0;
+    resp.channel_info[channel_count].end     = 0xFFFFFFFFFFFFFFFF;
     channel_count++;
 
     // cualquier otro canal
@@ -196,8 +193,7 @@ void list_channels() {
     write_packet(LIST_MSG, &resp, sizeof(uint32_t) + channel_count * sizeof(channel_info_t));
 }
 
-int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf)
-{
+int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
     char debug_buf[64];
 
     // 1) leer encoder_id (8 bytes) - no se usa
@@ -255,6 +251,7 @@ int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf)
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     char debug_buf[64];
     print_debug("Checking subscription");
+
     if (!is_subscribed(new_frame->channel)) {
         STATUS_LED_RED();
         sprintf(debug_buf, "Receiving unsubscribed channel data: %u", new_frame->channel);
@@ -294,7 +291,7 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     }
 
     timestamp_t timestamp;
-    uint32_t seq_check;
+    uint32_t    seq_check;
     memcpy(&timestamp, decrypted_data + (encrypted_data_size - 12), sizeof(timestamp_t));
     memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
     if (seq_check != encoded_frame->seq_num) {
@@ -311,12 +308,13 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 void init() {
     flash_simple_init();
     flash_simple_read(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
+
     if (decoder_status.first_boot != FLASH_FIRST_BOOT) {
         print_debug("First boot. Setting flash...");
         decoder_status.first_boot = FLASH_FIRST_BOOT;
 
         channel_status_t subscription[MAX_CHANNEL_COUNT];
-        for (int i = 0; i < MAX_CHANNEL_COUNT; i++){
+        for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
             subscription[i].start_timestamp = DEFAULT_CHANNEL_TIMESTAMP;
             subscription[i].end_timestamp   = DEFAULT_CHANNEL_TIMESTAMP;
             subscription[i].active = false;
@@ -330,9 +328,9 @@ void init() {
         flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
 
 #ifdef CRYPTO_EXAMPLE
-        memset(decoder_keys.master_key, 0x42, KEY_SIZE);
+        memset(decoder_keys.master_key,    0x42, KEY_SIZE);
         memset(decoder_keys.signature_key, 0x43, KEY_SIZE);
-        memset(decoder_keys.encoder_id, 0x44, ENCODER_ID_SIZE);
+        memset(decoder_keys.encoder_id,    0x44, ENCODER_ID_SIZE);
         flash_simple_erase_page(FLASH_KEYS_ADDR);
         flash_simple_write(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
 #endif
@@ -354,10 +352,10 @@ void crypto_example() {
 #endif
 
 int main(void) {
-    char debug_buf[64];
-    uint8_t uart_buf[100];
+    char     debug_buf[64];
+    uint8_t  uart_buf[100];
     msg_type_t cmd;
-    int result;
+    int      result;
     uint16_t pkt_len;
 
     init();
@@ -391,7 +389,12 @@ int main(void) {
 
         case SUBSCRIBE_MSG:
             STATUS_LED_YELLOW();
-            update_subscription(pkt_len, uart_buf);
+            // Si update_subscription va bien, respondemos con un paquete vacío:
+            if (update_subscription(pkt_len, uart_buf) == 0) {
+                // Enviar un "SUBSCRIBE_MSG" vacío para indicar éxito
+                write_packet(SUBSCRIBE_MSG, NULL, 0);
+            }
+            // Si hay error, ya se imprime un mensaje y no respondemos
             break;
 
         default:
