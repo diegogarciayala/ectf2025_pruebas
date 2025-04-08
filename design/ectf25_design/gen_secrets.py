@@ -5,8 +5,6 @@ Date: 2025
 This source file is part of a secure satellite TV transmission system for MITRE's 2025
 Embedded System CTF (eCTF). This code implements the key generation and secrets
 management for the satellite TV system.
-
-Copyright: Copyright (c) 2025
 """
 
 import argparse
@@ -20,24 +18,9 @@ from loguru import logger
 from .utils import KEY_SIZE, bytes_to_hex
 
 def gen_secrets(channels: list[int]) -> bytes:
-    """Generate the contents secrets file
-
-    This will be passed to the Encoder, ectf25_design.gen_subscription, and the build
-    process of the decoder
-
-    :param channels: List of channel numbers that will be valid in this deployment.
-        Channel 0 is the emergency broadcast, which will always be valid
-        and will NOT be included in this list
-
-    :returns: Contents of the secrets file
-    """
-    # 1) master key
     master_key = get_random_bytes(KEY_SIZE)
-    # 2) encoder_id = 8 bytes
     encoder_id = get_random_bytes(8)
-    # 3) sequence
     initial_seq_num = 1
-    # 4) signature key
     signature_key = get_random_bytes(KEY_SIZE)
 
     secrets = {
@@ -56,7 +39,7 @@ def gen_secrets(channels: list[int]) -> bytes:
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--force","-f",action="store_true",help="Force creation of secrets file")
+    parser.add_argument("--force","-f",action="store_true",help="Force creation of secrets file, overwriting existing file")
     parser.add_argument("secrets_file",type=Path,help="Path to the secrets file to be created")
     parser.add_argument("channels",nargs="+",type=int,help="Supported channels. Channel 0 is always valid")
     return parser.parse_args()

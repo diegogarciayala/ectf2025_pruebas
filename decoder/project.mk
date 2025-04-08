@@ -8,7 +8,7 @@
 # Example: uncomment for debug-friendly optimization
 #MXC_OPTIMIZE_CFLAGS = -Og
 
-# This example is only compatible with the FTHR board, so we override:
+# Este ejemplo es sólo para la FTHR board:
 override BOARD=FTHR_RevA
 MFLOAT_ABI=soft
 
@@ -22,18 +22,16 @@ STARTUPFILE=startup_firmware.S
 ENTRY=firmware_startup
 
 # ****************** eCTF Crypto Example *******************
-#CRYPTO_EXAMPLE=1  # <- ponlo a 1 si quieres la parte CRYPTO_EXAMPLE
-CRYPTO_EXAMPLE=0   # <- si no quieres demos de crypto
+CRYPTO_EXAMPLE=0   # Ponlo a 1 si quieres las funciones de crypto de ejemplo
 
-# ****************** eCTF DECODER ID injection *******************
+# ****************** DECODER_ID: lo pasamos al compilar con -e DECODER_ID=0x... ***
 ifndef DECODER_ID
 $(error DECODER_ID is not set. Must be passed in docker run -e DECODER_ID=0x...)
 endif
 
 CFLAGS += -DDECODER_ID=$(DECODER_ID)
 
-# ****************** Include paths para Maxim SDK *******************
-# Ajusta estas rutas si difieren en tu entorno Docker
+# ****************** Incluir paths Maxim SDK (ajusta a tu entorno si difiere) ****
 IPATH += $(CMSIS_ROOT)/Device/Maxim/MAX78000/Include
 IPATH += $(PERIPH_DRIVER_ROOT)/Include
 IPATH += $(BOARD_DIR)/Include
