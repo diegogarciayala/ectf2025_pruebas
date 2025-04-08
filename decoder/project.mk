@@ -1,20 +1,14 @@
 # This file can be used to set build configuration
-# variables.  These variables are defined in a file called
+# variables. These variables are defined in a file called
 # "Makefile" that is located next to this one.
 
 # For instructions on how to use this system, see
 # https://analog-devices-msdk.github.io/msdk/USERGUIDE/#build-system
 
+# Example: uncomment for debug-friendly optimization
 #MXC_OPTIMIZE_CFLAGS = -Og
-# ^ For example, you can uncomment this line to
-# optimize the project for debugging
 
-# **********************************************************
-
-# Add your config here!
-
-# This example is only compatible with the FTHR board,
-# so we override the BOARD value to hard-set it.
+# This example is only compatible with the FTHR board, so we override:
 override BOARD=FTHR_RevA
 MFLOAT_ABI=soft
 
@@ -23,33 +17,23 @@ IPATH+=inc/
 VPATH+=src/
 
 # ****************** eCTF Bootloader *******************
-# DO NOT REMOVE
 LINKERFILE=firmware.ld
 STARTUPFILE=startup_firmware.S
 ENTRY=firmware_startup
 
 # ****************** eCTF Crypto Example *******************
-# Uncomment the commented lines below and comment the disable
-# lines to enable the eCTF Crypto Example.
-# WolfSSL must be included in this directory as wolfssl/
-# WolfSSL can be downloaded from: https://www.wolfssl.com/download/
+#CRYPTO_EXAMPLE=1  # <- ponlo a 1 si quieres la parte CRYPTO_EXAMPLE
+CRYPTO_EXAMPLE=0   # <- si no quieres demos de crypto
 
-# Disable Crypto Example
-CRYPTO_EXAMPLE=0
-
-# Enable Crypto Example
-#CRYPTO_EXAMPLE=1
-
-# ****************** eCTF MITRE 2025 Customizations *******************
-
-# --- Inyección de DECODER_ID automático ---
+# ****************** eCTF DECODER ID injection *******************
 ifndef DECODER_ID
-$(error DECODER_ID is not set. Must be passed with docker run -e DECODER_ID=0x...)
+$(error DECODER_ID is not set. Must be passed in docker run -e DECODER_ID=0x...)
 endif
 
 CFLAGS += -DDECODER_ID=$(DECODER_ID)
 
-# --- Incluir paths correctos del Maxim SDK ---
+# ****************** Include paths para Maxim SDK *******************
+# Ajusta estas rutas si difieren en tu entorno Docker
 IPATH += $(CMSIS_ROOT)/Device/Maxim/MAX78000/Include
 IPATH += $(PERIPH_DRIVER_ROOT)/Include
 IPATH += $(BOARD_DIR)/Include
