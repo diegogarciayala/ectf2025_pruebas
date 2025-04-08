@@ -405,81 +405,85 @@ void list_channels() {
  ******************* COMMAND FUNCTIONS ********************
  **********************************************************/
 
-int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *sub_data){
-    // Realmente 'sub_data' apunta al inicio del buffer completo (encoder_id + suscripción + firma).
-    // Así que creamos un puntero a raw bytes:
-    uint8_t *raw_buf = (uint8_t *) sub_data;
+int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf)
+{
+    char debug_buf[64];
 
-    // 1) Leer 8 bytes de encoder_id (no usados)
+    // 1) Leer los primeros 8 bytes (encoder_id)
     uint8_t encoder_id[8];
     memcpy(encoder_id, raw_buf, 8);
 
-    // 2) La suscripción de 24 bytes está en offset 8
-    subscription_update_packet_t *sub_ptr =
-        (subscription_update_packet_t *)(raw_buf + 8);
+    // 2) A partir de offset 8, tenemos la suscripción (24 bytes)
+    subscription_update_packet_t *sub_ptr = (subscription_update_packet_t *)(raw_buf + 8);
 
-    // 3) La firma (16 bytes) está en offset 8 + 24 = 32
-    size_t sub_len = 8 + sizeof(subscription_update_packet_t); // = 32
-    uint8_t *signature = raw_buf + sub_len; // offset 32
+    print_debug("Updating subscription");
 
-#ifdef CRYPTO_EXAMPLE
-    // 4) Verificar la firma
+    // Mensaje de debug sobre la suscripción
+    sprintf(debug_buf, "Subscription: Device ID=%u, Channel=%u",
+            sub_ptr->decoder_id, sub_ptr->channel);
+    print_debug(debug_buf);
 
-    // El bloque a firmar son estos 8 bytes + los 24 bytes de la suscripción (en total 32).
-    size_t subscription_data_len = 8 + sizeof(subscription_update_packet_t); // = 8 + 24 = 32
-    if (pkt_len < subscription_data_len + CMAC_SIZE) {
-        print_error("Invalid subscription packet length");
+    // Verificar si es para este decoder
+    if (sub_ptr->decoder_id != DEVICE_ID) {
+        print_error("Subscription not for this device");
         return -1;
     }
 
-    // La firma son los últimos 16 bytes
+#ifdef CRYPTO_EXAMPLE
+    // 3) Verificar la firma
+    size_t subscription_data_len = 8 + sizeof(subscription_update_packet_t); // 8 + 24 = 32
+    if (pkt_len < (subscription_data_len + CMAC_SIZE)) {
+        print_error("Invalid subscription packet length");
+        return -1;
+    }
+    // Firma = últimos 16 bytes
     uint8_t *signature = raw_buf + subscription_data_len;
 
     // Confirmar la firma sobre los primeros 32 bytes (encoder_id + suscripción)
     if (verify_aes_cmac(decoder_keys.signature_key,
-                        raw_buf,                  // buffer completo
-                        subscription_data_len,    // 32
+                        raw_buf,               // buffer completo
+                        subscription_data_len, // 32
                         signature) != 1) {
         print_error("Invalid subscription signature");
         return -1;
     }
-#endif
+		#endif
 
-    // 5) Buscar slot libre
-    int slot = find_free_channel_slot();
-    if (slot < 0) {
-        print_error("No free subscription slots");
-        return -1;
-    }
+		    // 4) Buscar slot libre
+		    int slot = find_free_channel_slot();
+		    if (slot < 0) {
+		        print_error("No free subscription slots");
+		        return -1;
+		    }
 
-    // 6) Actualizar la suscripción en memoria
-    decoder_status.subscribed_channels[slot].active = true;
-    decoder_status.subscribed_channels[slot].id = real_sub_data->channel;
-    decoder_status.subscribed_channels[slot].start_timestamp = real_sub_data->start_timestamp;
-    decoder_status.subscribed_channels[slot].end_timestamp   = real_sub_data->end_timestamp;
+		    // 5) Guardar la suscripción en memoria
+		    decoder_status.subscribed_channels[slot].active = true;
+		    decoder_status.subscribed_channels[slot].id = sub_ptr->channel;
+		    decoder_status.subscribed_channels[slot].start_timestamp = sub_ptr->start_timestamp;
+		    decoder_status.subscribed_channels[slot].end_timestamp   = sub_ptr->end_timestamp;
 
-    // 7) Guardar en flash
-    flash_simple_erase_page(FLASH_STATUS_ADDR);
-    flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
-    print_debug("Subscription updated and saved");
+		    // 6) Persistir en flash
+		    flash_simple_erase_page(FLASH_STATUS_ADDR);
+		    flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
+		    print_debug("Subscription updated and saved");
 
-#ifdef CRYPTO_EXAMPLE
-    // 8) Derivar la clave de canal (excepto canal de emergencia)
-    if (real_sub_data->channel != EMERGENCY_CHANNEL) {
-        char context[20];
-        sprintf(context, "channel-%u", real_sub_data->channel);
-        derive_key_from_master(decoder_keys.master_key, context, NULL,
-                               channel_keys[real_sub_data->channel]);
+		#ifdef CRYPTO_EXAMPLE
+		    // 7) Derivar la clave del canal si no es el de emergencia
+		    if (sub_ptr->channel != EMERGENCY_CHANNEL) {
+		        char context[20];
+		        sprintf(context, "channel-%u", sub_ptr->channel);
+		        derive_key_from_master(decoder_keys.master_key, context, NULL,
+		                               channel_keys[sub_ptr->channel]);
 
-        print_debug("Channel key derived");
-        sprintf(debug_buf, "Key: ");
-        print_debug(debug_buf);
-        custom_print_hex(channel_keys[real_sub_data->channel], 16);
-    }
-#endif
+		        print_debug("Channel key derived");
+		        sprintf(debug_buf, "Key: ");
+		        print_debug(debug_buf);
+		        custom_print_hex(channel_keys[sub_ptr->channel], 16);
+		    }
+		#endif
 
-    return 0;
-}
+		    return 0;
+		}
 
 
 // This function is called when the decoder receives a frame to decode
