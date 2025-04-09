@@ -313,6 +313,8 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 
     // En cualquier caso, el decoded frame es la parte inicial (sin los 12 bytes extra)
     write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
+    mxc_delay(MXC_DELAY_MSEC(10));
+
 #endif
 
     return 0;
