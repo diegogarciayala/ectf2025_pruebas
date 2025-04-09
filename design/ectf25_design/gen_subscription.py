@@ -17,8 +17,6 @@ from pathlib import Path
 from loguru import logger
 from .utils import aes_cmac, bytes_to_hex
 
-ONE_MONTH_SECONDS = 2592000  # 30 días ~ 2592000s
-
 def gen_subscription(
     secrets: bytes, device_id: int, _cli_start: int, _cli_end: int, channel: int
 ) -> bytes:
@@ -34,9 +32,8 @@ def gen_subscription(
     if channel != 0 and channel not in secrets_json["channels"]:
         raise ValueError(f"Channel {channel} is not valid in this deployment")
 
-    # Forzamos 'start' y 'end'
-    start = int(time.time())
-    end   = start + ONE_MONTH_SECONDS
+    start = _cli_start
+    end = _cli_end
 
     # subscription_data: 4B device_id + 8B start + 8B end + 4B channel = 24 bytes
     subscription_data = struct.pack("<IQQI", device_id, start, end, channel)
