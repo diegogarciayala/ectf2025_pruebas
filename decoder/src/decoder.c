@@ -42,7 +42,7 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define CMAC_SIZE 16
 #define ENCODER_ID_SIZE 8
 #define NONCE_SIZE 8
-#define HEADER_SIZE 12
+#define HEADER_SIZE 16
 
 #define FLASH_DEVICE_ID_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (4 * MXC_FLASH_PAGE_SIZE))
 #define FLASH_STATUS_ADDR    ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (2 * MXC_FLASH_PAGE_SIZE))
