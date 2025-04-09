@@ -125,17 +125,16 @@ void create_nonce_from_seq_channel(uint32_t seq_num, uint32_t channel_id, uint8_
 
 // --------- AHORA LEEMOS "AHORA" del RTC/sistema con time(NULL) -------------
 bool is_subscribed(channel_id_t channel) {
-    if (channel == EMERGENCY_CHANNEL) {
-        return true; // canal 0 siempre activo
+    // Si se recibe el canal 1, se trata como emergencia y se acepta siempre.
+    if (channel == 1) {
+        return true;
     }
-
-    // Cogemos la hora del sistema (UNIX epoch)
+    // Para otros canales, se comprueba la suscripción activa almacenada.
     time_t now = time(NULL);
     if (now < 0) {
         now = 0;
     }
     timestamp_t current_time = (timestamp_t) now;
-
     for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
         if (decoder_status.subscribed_channels[i].active &&
             decoder_status.subscribed_channels[i].id == channel &&
