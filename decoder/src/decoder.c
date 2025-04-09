@@ -275,11 +275,10 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     }
 
     uint8_t *key;
+    // Para el canal de emergencia se usa la master key; para los demás, la clave derivada
     if (new_frame->channel == EMERGENCY_CHANNEL) {
-        // canal de emergencias: usar master key
         key = decoder_keys.master_key;
     } else {
-        // canales normales: usar clave del canal
         key = channel_keys[new_frame->channel];
     }
 
@@ -287,6 +286,10 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     create_nonce_from_seq_channel(encoded_frame->seq_num, new_frame->channel, nonce);
 
     size_t encrypted_data_size = frame_len - HEADER_SIZE;
+    if (encrypted_data_size < 12) {
+        print_error("Frame too small");
+        return -1;
+    }
     uint8_t decrypted_data[FRAME_SIZE + 12];
     int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, decrypted_data);
     if (result != 0) {
@@ -295,29 +298,22 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
 
-    if (new_frame->channel == EMERGENCY_CHANNEL) {
-        // 🚨 Canal de emergencias: enviar el frame completo
-        write_packet(DECODE_MSG, decrypted_data, encrypted_data_size);
-    } else {
-        // 📺 Canal normal: verificar timestamp y seq_num
+    // Para canales "normales", se comprueba la secuencia (y se descartan 12 bytes)
+    // Y para el canal de emergencia también se deben quitar los 12 bytes,
+    // de modo que la trama decodificada coincida con la original transmitida por el encoder.
+    if (new_frame->channel != EMERGENCY_CHANNEL) {
         timestamp_t timestamp;
         uint32_t    seq_check;
-
-        if (encrypted_data_size < 12) {
-            print_error("Frame too small");
-            return -1;
-        }
-
         memcpy(&timestamp, decrypted_data + (encrypted_data_size - 12), sizeof(timestamp_t));
         memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
         if (seq_check != encoded_frame->seq_num) {
             print_error("Sequence number mismatch");
             return -1;
         }
-
-        // Enviar solo los datos útiles (sin timestamp ni seq_num)
-        write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
     }
+
+    // En cualquier caso, el decoded frame es la parte inicial (sin los 12 bytes extra)
+    write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
 #endif
 
     return 0;
