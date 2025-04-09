@@ -261,8 +261,8 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     print_debug("Subscription Valid");
 
 #ifdef CRYPTO_EXAMPLE
-    // dec
     encoded_frame_t *encoded_frame = (encoded_frame_t *)new_frame;
+
     if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
         print_error("Possible replay attack detected");
         return -1;
@@ -274,9 +274,14 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
 
-    uint8_t *key = (new_frame->channel == EMERGENCY_CHANNEL)
-                  ? decoder_keys.master_key
-                  : channel_keys[new_frame->channel];
+    uint8_t *key;
+    if (new_frame->channel == EMERGENCY_CHANNEL) {
+        // canal de emergencias: usar master key
+        key = decoder_keys.master_key;
+    } else {
+        // canales normales: usar clave del canal
+        key = channel_keys[new_frame->channel];
+    }
 
     uint8_t nonce[NONCE_SIZE];
     create_nonce_from_seq_channel(encoded_frame->seq_num, new_frame->channel, nonce);
@@ -290,20 +295,34 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
 
-    timestamp_t timestamp;
-    uint32_t    seq_check;
-    memcpy(&timestamp, decrypted_data + (encrypted_data_size - 12), sizeof(timestamp_t));
-    memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
-    if (seq_check != encoded_frame->seq_num) {
-        print_error("Sequence number mismatch");
-        return -1;
+    if (new_frame->channel == EMERGENCY_CHANNEL) {
+        // 🚨 Canal de emergencias: enviar el frame completo
+        write_packet(DECODE_MSG, decrypted_data, encrypted_data_size);
+    } else {
+        // 📺 Canal normal: verificar timestamp y seq_num
+        timestamp_t timestamp;
+        uint32_t    seq_check;
+
+        if (encrypted_data_size < 12) {
+            print_error("Frame too small");
+            return -1;
+        }
+
+        memcpy(&timestamp, decrypted_data + (encrypted_data_size - 12), sizeof(timestamp_t));
+        memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
+        if (seq_check != encoded_frame->seq_num) {
+            print_error("Sequence number mismatch");
+            return -1;
+        }
+
+        // Enviar solo los datos útiles (sin timestamp ni seq_num)
+        write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
     }
-    memcpy(new_frame->data, decrypted_data, encrypted_data_size - 12);
 #endif
 
-    write_packet(DECODE_MSG, new_frame->data, frame_len > 12 ? frame_len - 12 : 0);
     return 0;
 }
+
 
 void init() {
     flash_simple_init();
