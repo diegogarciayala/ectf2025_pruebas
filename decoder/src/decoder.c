@@ -32,7 +32,7 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define pkt_len_t uint16_t
 
 #define MAX_CHANNEL_COUNT 8
-#define EMERGENCY_CHANNEL 0
+#define EMERGENCY_CHANNEL 1
 #define FRAME_SIZE 64
 #define DEFAULT_CHANNEL_TIMESTAMP 0xFFFFFFFFFFFFFFFF
 #define FLASH_FIRST_BOOT 0xDEADBEEF
