@@ -42,6 +42,7 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define CMAC_SIZE 16
 #define ENCODER_ID_SIZE 8
 #define NONCE_SIZE 8
+// HEADER_SIZE corregido a 16 bytes: 4+4+8
 #define HEADER_SIZE 16
 
 #define FLASH_DEVICE_ID_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (4 * MXC_FLASH_PAGE_SIZE))
@@ -85,7 +86,6 @@ typedef struct {
     uint8_t signature_key[KEY_SIZE];
     uint8_t encoder_id[ENCODER_ID_SIZE];
 } decoder_keys_t;
-
 #pragma pack(pop)
 
 typedef struct {
@@ -125,11 +125,10 @@ void create_nonce_from_seq_channel(uint32_t seq_num, uint32_t channel_id, uint8_
 
 // --------- AHORA LEEMOS "AHORA" del RTC/sistema con time(NULL) -------------
 bool is_subscribed(channel_id_t channel) {
-    // Si se recibe el canal 1, se trata como emergencia y se acepta siempre.
-    if (channel == 1) {
-        return true;
+    if (channel == EMERGENCY_CHANNEL) {
+        return true; // canal de emergencia siempre activo
     }
-    // Para otros canales, se comprueba la suscripción activa almacenada.
+    // Cogemos la hora del sistema (UNIX epoch)
     time_t now = time(NULL);
     if (now < 0) {
         now = 0;
@@ -187,14 +186,12 @@ void list_channels() {
             channel_count++;
         }
     }
-
     resp.n_channels = channel_count;
     write_packet(LIST_MSG, &resp, sizeof(uint32_t) + channel_count * sizeof(channel_info_t));
 }
 
 int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
     char debug_buf[64];
-
     // 1) leer encoder_id (8 bytes) - no se usa
     uint8_t encoder_id[8];
     memcpy(encoder_id, raw_buf, 8);
@@ -220,7 +217,6 @@ int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
         return -1;
     }
     uint8_t *signature = raw_buf + subscription_data_len;
-
     if (verify_aes_cmac(decoder_keys.signature_key, raw_buf, subscription_data_len, signature) != 1) {
         print_error("Invalid subscription signature");
         return -1;
@@ -250,7 +246,6 @@ int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     char debug_buf[64];
     print_debug("Checking subscription");
-
     if (!is_subscribed(new_frame->channel)) {
         STATUS_LED_RED();
         sprintf(debug_buf, "Receiving unsubscribed channel data: %u", new_frame->channel);
@@ -262,21 +257,19 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 #ifdef CRYPTO_EXAMPLE
     encoded_frame_t *encoded_frame = (encoded_frame_t *)new_frame;
 
-    // Para canales normales se verifica el replay y el encoder_id.
+    // Para canales normales se verifica replay y encoder_id.
     if (new_frame->channel != EMERGENCY_CHANNEL) {
         if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
             print_error("Possible replay attack detected");
             return -1;
         }
         last_seq_num = encoded_frame->seq_num;
-
         if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
             print_error("Invalid encoder ID");
             return -1;
         }
     }
 
-    // Seleccionar clave: para emergencia usar master_key, para los demás la derivada.
     uint8_t *key;
     if (new_frame->channel == EMERGENCY_CHANNEL) {
         key = decoder_keys.master_key;
@@ -300,8 +293,7 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
 
-    // Para canales normales se verifica la correspondencia de la secuencia, pero
-    // en cualquier caso el decoded frame se obtiene eliminando los últimos 12 bytes.
+    // Para canales normales se verifica el valor de secuencia (últimos 4 bytes)
     if (new_frame->channel != EMERGENCY_CHANNEL) {
         uint32_t seq_check;
         memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
@@ -310,38 +302,29 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
             return -1;
         }
     }
-
-    // En cualquier caso, devolver los primeros (encrypted_data_size - 12) bytes,
-    // que deben coincidir exactamente con el frame original pasado al encoder.
+    // El decoded frame es la parte inicial sin los 12 bytes (timestamp y seq_num)
     write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
 
-    // (Opcionalmente, puedes agregar una breve demora para asegurar la transmisión)
-    mxc_delay(MXC_DELAY_MSEC(100));
-
+    // Esperar ACK del host para asegurar que el paquete se transmitió completamente.
+    (void)get_msg();
 #endif
-
     return 0;
 }
-
 
 void init() {
     flash_simple_init();
     flash_simple_read(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
-
     if (decoder_status.first_boot != FLASH_FIRST_BOOT) {
         print_debug("First boot. Setting flash...");
         decoder_status.first_boot = FLASH_FIRST_BOOT;
-
         channel_status_t subscription[MAX_CHANNEL_COUNT];
         for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
             subscription[i].start_timestamp = DEFAULT_CHANNEL_TIMESTAMP;
             subscription[i].end_timestamp   = DEFAULT_CHANNEL_TIMESTAMP;
             subscription[i].active = false;
         }
-
         flash_simple_erase_page(FLASH_DEVICE_ID_ADDR);
         flash_simple_write(FLASH_DEVICE_ID_ADDR, &DEVICE_ID, sizeof(decoder_id_t));
-
         memcpy(decoder_status.subscribed_channels, subscription, sizeof(subscription));
         flash_simple_erase_page(FLASH_STATUS_ADDR);
         flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
@@ -356,7 +339,6 @@ void init() {
     } else {
         flash_simple_read(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
     }
-
     int ret = uart_init();
     if (ret < 0) {
         STATUS_LED_ERROR();
@@ -410,10 +392,8 @@ int main(void) {
             STATUS_LED_YELLOW();
             // Si update_subscription va bien, respondemos con un paquete vacío:
             if (update_subscription(pkt_len, uart_buf) == 0) {
-                // Enviar un "SUBSCRIBE_MSG" vacío para indicar éxito
                 write_packet(SUBSCRIBE_MSG, NULL, 0);
             }
-            // Si hay error, ya se imprime un mensaje y no respondemos
             break;
 
         default:
