@@ -316,7 +316,7 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
 
     // (Opcionalmente, puedes agregar una breve demora para asegurar la transmisión)
-    mxc_delay(MXC_DELAY_MSEC(10));
+    mxc_delay(MXC_DELAY_MSEC(100));
 
 #endif
 
