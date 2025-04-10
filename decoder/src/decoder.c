@@ -262,19 +262,22 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
 #ifdef CRYPTO_EXAMPLE
     encoded_frame_t *encoded_frame = (encoded_frame_t *)new_frame;
 
-    if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
-        print_error("Possible replay attack detected");
-        return -1;
-    }
-    last_seq_num = encoded_frame->seq_num;
+    // Para canales normales se verifica el replay y el encoder_id.
+    if (new_frame->channel != EMERGENCY_CHANNEL) {
+        if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
+            print_error("Possible replay attack detected");
+            return -1;
+        }
+        last_seq_num = encoded_frame->seq_num;
 
-    if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
-        print_error("Invalid encoder ID");
-        return -1;
+        if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
+            print_error("Invalid encoder ID");
+            return -1;
+        }
     }
 
+    // Seleccionar clave: para emergencia usar master_key, para los demás la derivada.
     uint8_t *key;
-    // Para el canal de emergencia se usa la master key; para los demás, la clave derivada
     if (new_frame->channel == EMERGENCY_CHANNEL) {
         key = decoder_keys.master_key;
     } else {
@@ -297,13 +300,10 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
 
-    // Para canales "normales", se comprueba la secuencia (y se descartan 12 bytes)
-    // Y para el canal de emergencia también se deben quitar los 12 bytes,
-    // de modo que la trama decodificada coincida con la original transmitida por el encoder.
+    // Para canales normales se verifica la correspondencia de la secuencia, pero
+    // en cualquier caso el decoded frame se obtiene eliminando los últimos 12 bytes.
     if (new_frame->channel != EMERGENCY_CHANNEL) {
-        timestamp_t timestamp;
-        uint32_t    seq_check;
-        memcpy(&timestamp, decrypted_data + (encrypted_data_size - 12), sizeof(timestamp_t));
+        uint32_t seq_check;
         memcpy(&seq_check, decrypted_data + (encrypted_data_size - 4), sizeof(uint32_t));
         if (seq_check != encoded_frame->seq_num) {
             print_error("Sequence number mismatch");
@@ -311,8 +311,11 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         }
     }
 
-    // En cualquier caso, el decoded frame es la parte inicial (sin los 12 bytes extra)
+    // En cualquier caso, devolver los primeros (encrypted_data_size - 12) bytes,
+    // que deben coincidir exactamente con el frame original pasado al encoder.
     write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
+
+    // (Opcionalmente, puedes agregar una breve demora para asegurar la transmisión)
     mxc_delay(MXC_DELAY_MSEC(10));
 
 #endif
