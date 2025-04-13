@@ -23,7 +23,6 @@ from .utils import (
     bytes_to_hex
 )
 
-
 class Encoder:
     def __init__(self, secrets: bytes):
         """
@@ -64,36 +63,29 @@ class Encoder:
                 channel_key = bytes(channel_key)
             self.channel_keys[channel] = channel_key
 
+    def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
+        """Modified encoder: do NOT encrypt channel 0 frames."""
+        if channel not in self.valid_channels:
+            raise ValueError(f"Channel {channel} is not valid")
 
-def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
-    """El frame encoder modificado para NO cifrar canal 0."""
-    # Validar que el canal es válido
-    if channel not in self.valid_channels:
-        raise ValueError(f"Channel {channel} is not valid")
+        seq_num = self.current_seq_num
+        self.current_seq_num += 1
 
-    # Incrementar el sequence number
-    seq_num = self.current_seq_num
-    self.current_seq_num += 1
+        encoder_id_bytes = self.encoder_id
+        header = struct.pack("<II", seq_num, channel) + encoder_id_bytes
+        plaintext = frame + struct.pack("<QI", timestamp, seq_num)
 
-    # Crear el header (seq_num + channel + encoder_id)
-    encoder_id_bytes = self.encoder_id
-    header = struct.pack("<II", seq_num, channel) + encoder_id_bytes
+        if channel == 0:
+            # Channel 0 (emergency): send plaintext (no encryption)
+            final_payload = header + plaintext
+        else:
+            # Other channels: encrypt
+            channel_key = self.channel_keys[channel]
+            nonce = create_nonce_from_seq_channel(seq_num, channel)
+            ciphertext, _ = aes_ctr_encrypt(channel_key, plaintext, nonce)
+            final_payload = header + ciphertext
 
-    # Crear la parte de datos: frame + timestamp + sequence number
-    plaintext = frame + struct.pack("<QI", timestamp, seq_num)
-
-    if channel == 0:
-        # Para canal 0 (emergencia), NO ciframos, enviamos el plaintext directamente
-        final_payload = header + plaintext
-    else:
-        # Para otros canales, ciframos como antes
-        channel_key = self.channel_keys[channel]
-        nonce = create_nonce_from_seq_channel(seq_num, channel)
-        ciphertext, _ = aes_ctr_encrypt(channel_key, plaintext, nonce)
-        final_payload = header + ciphertext
-
-    return final_payload
-
+        return final_payload
 
 def main():
     """A test main to one-shot encode a frame
@@ -116,7 +108,6 @@ def main():
     encoded_frame = encoder.encode(args.channel, args.frame.encode(), args.timestamp)
     print(f"Encoded frame: {bytes_to_hex(encoded_frame)}")
     print(f"Length: {len(encoded_frame)} bytes")
-
 
 if __name__ == "__main__":
     main()
