@@ -189,7 +189,9 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     write_packet(DECODE_MSG, output_data, output_len);
     print_debug("Sent decoded frame to host");
 
-    (void)get_msg();
+    msg_type_t ack;
+    uint16_t ack_len;
+    read_packet(&ack, NULL, &ack_len);
 
     return 0;
 }
