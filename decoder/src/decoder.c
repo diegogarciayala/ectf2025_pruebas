@@ -271,14 +271,20 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
         return -1;
     }
     uint8_t decrypted_data[FRAME_SIZE + 12];
-    int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, decrypted_data);
-    if (result != 0) {
-        sprintf(debug_buf, "Decryption failed with error %d", result);
-        print_error(debug_buf);
-        return -1;
-    }
-    // En ambos casos, se elimina el bloque final de 12 bytes (timestamp y seq_num)
-    write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
+		int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, decrypted_data);
+		if (result != 0) {
+		    sprintf(debug_buf, "Decryption failed with error %d", result);
+		    print_error(debug_buf);
+		    return -1;
+		}
+
+		// ✨ NUEVO: imprimir la trama decodificada (sin los últimos 12 bytes)
+		sprintf(debug_buf, "Decrypted frame:");
+		print_debug(debug_buf);
+		custom_print_hex(decrypted_data, encrypted_data_size - 12);
+
+		// Luego ya se manda al host
+		write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
     // Esperar ACK del host
     (void)get_msg();
 #endif
