@@ -271,7 +271,7 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
             return -1;
         }
 
-        int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, output_data);
+				int result = decrypt_sym(encoded_frame->encrypted_data, encrypted_data_size, key, output_data);
         if (result != 0) {
             sprintf(debug_buf, "Decryption failed with error %d", result);
             print_error(debug_buf);
