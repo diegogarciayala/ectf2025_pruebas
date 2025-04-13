@@ -1,15 +1,8 @@
-/**
- * @file    decoder.c
- * @author  ...
- * @brief   eCTF Secure Satellite TV Decoder Implementation
- * @date    2025
- */
-
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <time.h>   // <-- añadido para time(NULL)
+#include <time.h>
 
 #include "mxc_device.h"
 #include "status_led.h"
@@ -19,20 +12,12 @@
 #include "host_messaging.h"
 #include "simple_uart.h"
 
-#ifdef CRYPTO_EXAMPLE
-#include "simple_crypto.h"
-extern int encrypt_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *ciphertext);
-extern int decrypt_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *plaintext);
-extern int hash(void *data, size_t len, uint8_t *hash_out);
-#endif
-
 #define timestamp_t uint64_t
 #define channel_id_t uint32_t
 #define decoder_id_t uint32_t
 #define pkt_len_t uint16_t
 
 #define MAX_CHANNEL_COUNT 8
-// Para ajustarnos al test, definimos el canal de emergencia como 1.
 #define EMERGENCY_CHANNEL 1
 #define FRAME_SIZE 64
 #define DEFAULT_CHANNEL_TIMESTAMP 0xFFFFFFFFFFFFFFFF
@@ -43,7 +28,6 @@ extern int hash(void *data, size_t len, uint8_t *hash_out);
 #define CMAC_SIZE 16
 #define ENCODER_ID_SIZE 8
 #define NONCE_SIZE 8
-// El header se construye como: seq_num (4) + channel (4) + encoder_id (8) = 16 bytes.
 #define HEADER_SIZE 16
 
 #define FLASH_DEVICE_ID_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (4 * MXC_FLASH_PAGE_SIZE))
@@ -124,9 +108,7 @@ void create_nonce_from_seq_channel(uint32_t seq_num, uint32_t channel_id, uint8_
     memcpy(nonce + sizeof(uint32_t), &channel_id, sizeof(uint32_t));
 }
 
-// --------- AHORA LEEMOS "AHORA" del RTC/sistema con time(NULL) -------------
 bool is_subscribed(channel_id_t channel) {
-    // Para el canal de emergencia (definido como 1) se retorna siempre true.
     if (channel == EMERGENCY_CHANNEL) {
         return true;
     }
@@ -146,15 +128,6 @@ bool is_subscribed(channel_id_t channel) {
     return false;
 }
 
-int find_free_channel_slot() {
-    for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
-        if (!decoder_status.subscribed_channels[i].active) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 void custom_print_hex(uint8_t *data, size_t len) {
     size_t pos = 0;
     for (size_t i = 0; i < len && pos < sizeof(output_buf)-3; i++) {
@@ -171,13 +144,11 @@ void list_channels() {
     sprintf(debug_buf, "Listing channels...");
     print_debug(debug_buf);
 
-    // El canal de emergencia se muestra con el valor EMERGENCY_CHANNEL (1)
     resp.channel_info[channel_count].channel = EMERGENCY_CHANNEL;
     resp.channel_info[channel_count].start   = 0;
     resp.channel_info[channel_count].end     = 0xFFFFFFFFFFFFFFFF;
     channel_count++;
 
-    // Luego se listan las suscripciones activas para los demás canales.
     for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
         if (decoder_status.subscribed_channels[i].active) {
             resp.channel_info[channel_count].channel = decoder_status.subscribed_channels[i].id;
@@ -188,48 +159,6 @@ void list_channels() {
     }
     resp.n_channels = channel_count;
     write_packet(LIST_MSG, &resp, sizeof(uint32_t) + channel_count * sizeof(channel_info_t));
-}
-
-int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
-    char debug_buf[64];
-    // 1) leer encoder_id (8 bytes) - no se usa
-    uint8_t encoder_id[8];
-    memcpy(encoder_id, raw_buf, 8);
-    // 2) suscripción a offset 8
-    subscription_update_packet_t *sub_ptr = (subscription_update_packet_t *)(raw_buf + 8);
-    print_debug("Updating subscription");
-    sprintf(debug_buf, "Subscription: Device ID=%u, Channel=%u",
-            sub_ptr->decoder_id, sub_ptr->channel);
-    print_debug(debug_buf);
-    if (sub_ptr->decoder_id != DEVICE_ID) {
-        print_error("Subscription not for this device");
-        return -1;
-    }
-#ifdef CRYPTO_EXAMPLE
-    size_t subscription_data_len = 8 + sizeof(subscription_update_packet_t); // 8 + 24 = 32
-    if (pkt_len < (subscription_data_len + CMAC_SIZE)) {
-        print_error("Invalid subscription packet length");
-        return -1;
-    }
-    uint8_t *signature = raw_buf + subscription_data_len;
-    if (verify_aes_cmac(decoder_keys.signature_key, raw_buf, subscription_data_len, signature) != 1) {
-        print_error("Invalid subscription signature");
-        return -1;
-    }
-#endif
-    int slot = find_free_channel_slot();
-    if (slot < 0) {
-        print_error("No free subscription slots");
-        return -1;
-    }
-    decoder_status.subscribed_channels[slot].active = true;
-    decoder_status.subscribed_channels[slot].id    = sub_ptr->channel;
-    decoder_status.subscribed_channels[slot].start_timestamp = sub_ptr->start_timestamp;
-    decoder_status.subscribed_channels[slot].end_timestamp   = sub_ptr->end_timestamp;
-    flash_simple_erase_page(FLASH_STATUS_ADDR);
-    flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
-    print_debug("Subscription updated and saved");
-    return 0;
 }
 
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
@@ -248,67 +177,22 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     uint8_t output_data[FRAME_SIZE + 12];
     size_t output_len = 0;
 
-    // Diferenciar canal de emergencia (sin cifrar)
-    if (new_frame->channel != EMERGENCY_CHANNEL) {
-        if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
-            print_error("Possible replay attack detected");
-            return -1;
-        }
-        last_seq_num = encoded_frame->seq_num;
-
-        if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
-            print_error("Invalid encoder ID");
-            return -1;
-        }
-
-        uint8_t *key = channel_keys[new_frame->channel];
-        uint8_t nonce[NONCE_SIZE];
-        create_nonce_from_seq_channel(encoded_frame->seq_num, new_frame->channel, nonce);
-
-        size_t encrypted_data_size = frame_len - HEADER_SIZE;
-        if (encrypted_data_size < 12) {
-            print_error("Frame too small");
-            return -1;
-        }
-
-				int result = decrypt_sym(encoded_frame->encrypted_data, encrypted_data_size, key, output_data);
-        if (result != 0) {
-            sprintf(debug_buf, "Decryption failed with error %d", result);
-            print_error(debug_buf);
-            return -1;
-        }
-
-        output_len = encrypted_data_size - 12; // quitar timestamp + seq_num
-
-    } else {
-        // Canal 0 (emergencia) NO cifrado
-        size_t data_size = frame_len - HEADER_SIZE;
-        if (data_size < 12) {
-            print_error("Frame too small");
-            return -1;
-        }
-
-        // copiar directamente sin descifrar
-        memcpy(output_data, encoded_frame->encrypted_data, data_size);
-        output_len = data_size - 12; // quitar timestamp + seq_num
-    }
-
-    // IMPORTANTE: enviar SIEMPRE trama recibida o decodificada al host
-    write_packet(DECODE_MSG, output_data, output_len);
-    print_debug("Sent decoded frame to host");
-
-    // Esperar ACK del host
-    msg_type_t ack;
-    pkt_len_t ack_len;
-    int ret = read_packet(&ack, NULL, &ack_len);
-    if (ret < 0 || ack != ACK_MSG) {
-        print_error("No ACK received from host");
+    size_t data_size = frame_len - HEADER_SIZE;
+    if (data_size < 12) {
+        print_error("Frame too small");
         return -1;
     }
 
+    memcpy(output_data, encoded_frame->encrypted_data, data_size);
+    output_len = data_size - 12;
+
+    write_packet(DECODE_MSG, output_data, output_len);
+    print_debug("Sent decoded frame to host");
+
+    (void)get_msg();
+
     return 0;
 }
-
 
 void init() {
     flash_simple_init();
@@ -327,13 +211,6 @@ void init() {
         memcpy(decoder_status.subscribed_channels, subscription, sizeof(subscription));
         flash_simple_erase_page(FLASH_STATUS_ADDR);
         flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
-#ifdef CRYPTO_EXAMPLE
-        memset(decoder_keys.master_key,    0x42, KEY_SIZE);
-        memset(decoder_keys.signature_key, 0x43, KEY_SIZE);
-        memset(decoder_keys.encoder_id,    0x44, ENCODER_ID_SIZE);
-        flash_simple_erase_page(FLASH_KEYS_ADDR);
-        flash_simple_write(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
-#endif
     } else {
         flash_simple_read(FLASH_KEYS_ADDR, &decoder_keys, sizeof(decoder_keys_t));
     }
@@ -343,12 +220,6 @@ void init() {
         while (1);
     }
 }
-
-#ifdef CRYPTO_EXAMPLE
-void crypto_example() {
-    // ...
-}
-#endif
 
 int main(void) {
     char     debug_buf[64];
@@ -370,9 +241,6 @@ int main(void) {
         switch (cmd) {
             case LIST_MSG:
                 STATUS_LED_CYAN();
-#ifdef CRYPTO_EXAMPLE
-                crypto_example();
-#endif
                 boot_flag();
                 list_channels();
                 break;
@@ -382,9 +250,6 @@ int main(void) {
                 break;
             case SUBSCRIBE_MSG:
                 STATUS_LED_YELLOW();
-                if (update_subscription(pkt_len, uart_buf) == 0) {
-                    write_packet(SUBSCRIBE_MSG, NULL, 0);
-                }
                 break;
             default:
                 STATUS_LED_ERROR();
