@@ -64,62 +64,35 @@ class Encoder:
                 channel_key = bytes(channel_key)
             self.channel_keys[channel] = channel_key
 
-    def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
-        """The frame encoder function
 
-        This will be called for every frame that needs to be encoded before being
-        transmitted by the satellite to all listening TVs
+def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
+    """El frame encoder modificado para NO cifrar canal 0."""
+    # Validar que el canal es válido
+    if channel not in self.valid_channels:
+        raise ValueError(f"Channel {channel} is not valid")
 
-        :param channel: 32b unsigned channel number. Channel 0 is the emergency
-            broadcast that must be decodable by all channels.
-        :param frame: Frame to encode. Max frame size is 64 bytes.
-        :param timestamp: 64b timestamp to use for encoding. **NOTE**: This value may
-            have no relation to the current timestamp, so you should not compare it
-            against the current time. The timestamp is guaranteed to strictly
-            monotonically increase (always go up) with subsequent calls to encode
+    # Incrementar el sequence number
+    seq_num = self.current_seq_num
+    self.current_seq_num += 1
 
-        :returns: The encoded frame, which will be sent to the Decoder
-        """
-        # Validate that the requested channel is valid
-        if channel not in self.valid_channels:
-            raise ValueError(f"Channel {channel} is not valid")
+    # Crear el header (seq_num + channel + encoder_id)
+    encoder_id_bytes = self.encoder_id
+    header = struct.pack("<II", seq_num, channel) + encoder_id_bytes
 
-        # Increment sequence number for this frame
-        seq_num = self.current_seq_num
-        self.current_seq_num += 1
+    # Crear la parte de datos: frame + timestamp + sequence number
+    plaintext = frame + struct.pack("<QI", timestamp, seq_num)
 
-        # Get the encryption key for this channel
+    if channel == 0:
+        # Para canal 0 (emergencia), NO ciframos, enviamos el plaintext directamente
+        final_payload = header + plaintext
+    else:
+        # Para otros canales, ciframos como antes
         channel_key = self.channel_keys[channel]
-
-        # Ensure all data used in encryption is in bytes format
-        if isinstance(channel_key, bytearray):
-            channel_key = bytes(channel_key)
-        if isinstance(frame, bytearray):
-            frame = bytes(frame)
-
-        # Create a plaintext that includes the frame, timestamp, and sequence number
-        plaintext = frame + struct.pack("<QI", timestamp, seq_num)
-
-        # Create a nonce using sequence number and channel ID
         nonce = create_nonce_from_seq_channel(seq_num, channel)
-
-        # Encrypt the frame using AES-CTR
         ciphertext, _ = aes_ctr_encrypt(channel_key, plaintext, nonce)
+        final_payload = header + ciphertext
 
-        # Construct the final packet: header + ciphertext
-        # Header: (seq_num, channel, encoder_id)
-        encoder_id_bytes = self.encoder_id
-        if isinstance(encoder_id_bytes, bytearray):
-            encoder_id_bytes = bytes(encoder_id_bytes)
-
-        header = struct.pack("<II", seq_num, channel) + encoder_id_bytes
-
-        # Convert ciphertext to bytes if needed
-        if isinstance(ciphertext, bytearray):
-            ciphertext = bytes(ciphertext)
-
-        # Return the complete encoded frame
-        return header + ciphertext
+    return final_payload
 
 
 def main():
