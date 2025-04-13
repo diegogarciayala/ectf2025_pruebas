@@ -235,6 +235,7 @@ int update_subscription(pkt_len_t pkt_len, uint8_t *raw_buf) {
 int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     char debug_buf[64];
     print_debug("Checking subscription");
+
     if (!is_subscribed(new_frame->channel)) {
         STATUS_LED_RED();
         sprintf(debug_buf, "Receiving unsubscribed channel data: %u", new_frame->channel);
@@ -243,75 +244,71 @@ int decode(pkt_len_t frame_len, frame_packet_t *new_frame) {
     }
     print_debug("Subscription Valid");
 
-#ifdef CRYPTO_EXAMPLE
     encoded_frame_t *encoded_frame = (encoded_frame_t *)new_frame;
+    uint8_t output_data[FRAME_SIZE + 12];
+    size_t output_len = 0;
 
-		uint8_t output_data[FRAME_SIZE + 12];
-		size_t output_len = 0;
+    // Diferenciar canal de emergencia (sin cifrar)
+    if (new_frame->channel != EMERGENCY_CHANNEL) {
+        if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
+            print_error("Possible replay attack detected");
+            return -1;
+        }
+        last_seq_num = encoded_frame->seq_num;
 
-		// Para canales normales se verifica replay y encoder_id.
-		if (new_frame->channel != EMERGENCY_CHANNEL) {
-    if (encoded_frame->seq_num <= last_seq_num && last_seq_num > 0) {
-        print_error("Possible replay attack detected");
-        return -1;
+        if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
+            print_error("Invalid encoder ID");
+            return -1;
+        }
+
+        uint8_t *key = channel_keys[new_frame->channel];
+        uint8_t nonce[NONCE_SIZE];
+        create_nonce_from_seq_channel(encoded_frame->seq_num, new_frame->channel, nonce);
+
+        size_t encrypted_data_size = frame_len - HEADER_SIZE;
+        if (encrypted_data_size < 12) {
+            print_error("Frame too small");
+            return -1;
+        }
+
+        int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, output_data);
+        if (result != 0) {
+            sprintf(debug_buf, "Decryption failed with error %d", result);
+            print_error(debug_buf);
+            return -1;
+        }
+
+        output_len = encrypted_data_size - 12; // quitar timestamp + seq_num
+
+    } else {
+        // Canal 0 (emergencia) NO cifrado
+        size_t data_size = frame_len - HEADER_SIZE;
+        if (data_size < 12) {
+            print_error("Frame too small");
+            return -1;
+        }
+
+        // copiar directamente sin descifrar
+        memcpy(output_data, encoded_frame->encrypted_data, data_size);
+        output_len = data_size - 12; // quitar timestamp + seq_num
     }
-    last_seq_num = encoded_frame->seq_num;
-    if (memcmp(encoded_frame->encoder_id, decoder_keys.encoder_id, ENCODER_ID_SIZE) != 0) {
-        print_error("Invalid encoder ID");
-        return -1;
-    }
-    uint8_t *key = channel_keys[new_frame->channel];
-    uint8_t nonce[NONCE_SIZE];
-    create_nonce_from_seq_channel(encoded_frame->seq_num, new_frame->channel, nonce);
 
-    size_t encrypted_data_size = frame_len - HEADER_SIZE;
-    if (encrypted_data_size < 12) {
-        print_error("Frame too small");
-        return -1;
-    }
+    // IMPORTANTE: enviar SIEMPRE trama recibida o decodificada al host
+    write_packet(DECODE_MSG, output_data, output_len);
+    print_debug("Sent decoded frame to host");
 
-    int result = aes_ctr_crypt(key, encoded_frame->encrypted_data, encrypted_data_size, nonce, output_data);
-    if (result != 0) {
-        sprintf(debug_buf, "Decryption failed with error %d", result);
-        print_error(debug_buf);
-        return -1;
-    }
-    output_len = encrypted_data_size - 12; // quitar timestamp + seq
-		} else {
-    // Canal 0: NO desciframos, simplemente copiamos el payload
-    size_t data_size = frame_len - HEADER_SIZE;
-    if (data_size < 12) {
-        print_error("Frame too small");
-        return -1;
-    }
-    memcpy(output_data, encoded_frame->encrypted_data, data_size);
-    output_len = data_size - 12; // quitar timestamp + seq
-		}
-
-		// (Opcional) Debug: imprimir contenido descifrado
-		sprintf(debug_buf, "Decrypted frame:");
-		print_debug(debug_buf);
-		custom_print_hex(output_data, output_len);
-
-		// enviar trama decodificada
-		write_packet(DECODE_MSG, output_data, output_len);
-
-		// Esperar ACK del host
-		(void)get_msg();
-
-
-		// ✨ NUEVO: imprimir la trama decodificada (sin los últimos 12 bytes)
-		sprintf(debug_buf, "Decrypted frame:");
-		print_debug(debug_buf);
-		custom_print_hex(decrypted_data, encrypted_data_size - 12);
-
-		// Luego ya se manda al host
-		write_packet(DECODE_MSG, decrypted_data, encrypted_data_size - 12);
     // Esperar ACK del host
-    (void)get_msg();
-#endif
+    msg_type_t ack;
+    pkt_len_t ack_len;
+    int ret = read_packet(&ack, NULL, &ack_len);
+    if (ret < 0 || ack != ACK_MSG) {
+        print_error("No ACK received from host");
+        return -1;
+    }
+
     return 0;
 }
+
 
 void init() {
     flash_simple_init();
