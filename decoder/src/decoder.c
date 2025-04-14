@@ -252,7 +252,7 @@ int main(void) {
                 break;
             case SUBSCRIBE_MSG:
                 STATUS_LED_YELLOW();
-                subscription_update_packet_t *sub = (subscription_update_packet_t *)uart_buf;
+								subscription_update_packet_t *sub = (subscription_update_packet_t *)(uart_buf + 8);
                 bool stored = false;
                 for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
                     if (!decoder_status.subscribed_channels[i].active) {
