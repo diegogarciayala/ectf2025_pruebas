@@ -109,7 +109,7 @@ void create_nonce_from_seq_channel(uint32_t seq_num, uint32_t channel_id, uint8_
 }
 
 bool is_subscribed(channel_id_t channel) {
-    if (channel == EMERGENCY_CHANNEL) {
+    if (channel == 0 || channel == EMERGENCY_CHANNEL) {
         return true;
     }
     time_t now = time(NULL);
@@ -252,25 +252,28 @@ int main(void) {
                 break;
             case SUBSCRIBE_MSG:
                 STATUS_LED_YELLOW();
-								subscription_update_packet_t *sub = (subscription_update_packet_t *)(uart_buf + 8);
-                bool stored = false;
-                for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
-                    if (!decoder_status.subscribed_channels[i].active) {
-                        decoder_status.subscribed_channels[i].id = sub->channel;
-                        decoder_status.subscribed_channels[i].start_timestamp = sub->start_timestamp;
-                        decoder_status.subscribed_channels[i].end_timestamp = sub->end_timestamp;
-                        decoder_status.subscribed_channels[i].active = true;
-                        stored = true;
-                        break;
+                {
+                    uint8_t *sub_ptr = uart_buf + 8; // Skip encoder_id
+                    subscription_update_packet_t *sub = (subscription_update_packet_t *)sub_ptr;
+                    bool stored = false;
+                    for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
+                        if (!decoder_status.subscribed_channels[i].active) {
+                            decoder_status.subscribed_channels[i].id = sub->channel;
+                            decoder_status.subscribed_channels[i].start_timestamp = sub->start_timestamp;
+                            decoder_status.subscribed_channels[i].end_timestamp = sub->end_timestamp;
+                            decoder_status.subscribed_channels[i].active = true;
+                            stored = true;
+                            break;
+                        }
                     }
-                }
-                if (stored) {
-                    flash_simple_erase_page(FLASH_STATUS_ADDR);
-                    flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(decoder_status));
-                    print_debug("Subscription stored successfully");
-                    write_packet(ACK_MSG, NULL, 0);
-                } else {
-                    print_error("No space to store subscription");
+                    if (stored) {
+                        flash_simple_erase_page(FLASH_STATUS_ADDR);
+                        flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(decoder_status));
+                        print_debug("Subscription stored successfully");
+                        write_packet(ACK_MSG, NULL, 0);
+                    } else {
+                        print_error("No space to store subscription");
+                    }
                 }
                 break;
             default:
