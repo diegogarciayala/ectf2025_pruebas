@@ -1,32 +1,38 @@
-# gen_secrets.py (simplificado con la misma estructura que antes)
+# gen_secrets.py
 
+import argparse
 import json
-from pathlib import Path
+from loguru import logger
 
-def gen_secrets(output_file: Path, decoder_id_hex: str, channels: list[int], force: bool = False):
-    # Convertir el decoder_id desde string (ej: "0xDEADBEEF") a int
-    dec_id = int(decoder_id_hex, 0)
-    secrets = {
-        "decoder_id": dec_id,
+def gen_secrets(channels: list[int]) -> bytes:
+    """
+    Devuelve un JSON con "channels" y lo que necesites (por ejemplo decoder_id).
+    Lo retornamos en formato bytes (como solía hacerse en el pipeline anterior).
+    """
+    data = {
+        "decoder_id": 0xDEADBEEF,  # Ejemplo
         "channels": channels
     }
-
-    mode = "w" if force else "x"
-    with open(output_file, mode) as f:
-        json.dump(secrets, f, indent=2)
+    # Convertimos el dict a JSON y luego a bytes
+    secrets_bytes = json.dumps(data).encode('utf-8')
+    return secrets_bytes
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("output_file", type=Path)
-    parser.add_argument("decoder_id")
-    parser.add_argument("channels", nargs="+", type=int)
-    parser.add_argument("--force", "-f", action="store_true")
+    parser.add_argument("secrets_file", help="Ruta de salida para global.secrets")
+    parser.add_argument("channels", nargs="+", type=int, help="Listado de canales")
+    parser.add_argument("--force","-f", action="store_true", help="Sobrescribe si ya existe")
     args = parser.parse_args()
 
-    gen_secrets(args.output_file, args.decoder_id, args.channels, args.force)
-    print(f"Se escribió {args.output_file} con decoder_id={args.decoder_id} y channels={args.channels}")
+    # Llamamos a la función con la misma lógica que tu pipeline
+    secrets = gen_secrets(args.channels)
+
+    # Guardamos en un fichero
+    mode = "wb" if args.force else "xb"
+    with open(args.secrets_file, mode) as f:
+        f.write(secrets)
+
+    logger.success(f"Se escribió {args.secrets_file} con {args.channels}")
 
 if __name__ == "__main__":
     main()
