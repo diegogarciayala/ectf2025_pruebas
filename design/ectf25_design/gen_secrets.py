@@ -1,37 +1,32 @@
-#!/usr/bin/env python3
-"""
-Archivo: gen_secrets.py
-Genera un JSON muy simple con:
-  {
-    "decoder_id": <int>,
-    "channels": [0, 1, ...]
-  }
-"""
+# gen_secrets.py (simplificado con la misma estructura que antes)
 
-import argparse
 import json
 from pathlib import Path
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("output_file", type=Path, help="Dónde guardar el JSON con secrets")
-    parser.add_argument("decoder_id", help="ID en hex. Ej: 0xDEADBEEF")
-    parser.add_argument("channels", nargs="+", type=int, help="Canales disponibles (ej: 0 1 2)")
-    parser.add_argument("--force", "-f", action="store_true", help="Sobrescribir si ya existe")
-    args = parser.parse_args()
-
-    # Convertimos la string "0xDEADBEEF" a int
-    dec_id = int(args.decoder_id, 0)
-
+def gen_secrets(output_file: Path, decoder_id_hex: str, channels: list[int], force: bool = False):
+    # Convertir el decoder_id desde string (ej: "0xDEADBEEF") a int
+    dec_id = int(decoder_id_hex, 0)
     secrets = {
         "decoder_id": dec_id,
-        "channels": args.channels
+        "channels": channels
     }
 
-    mode = "w" if args.force else "x"
-    with open(args.output_file, mode) as f:
+    mode = "w" if force else "x"
+    with open(output_file, mode) as f:
         json.dump(secrets, f, indent=2)
-    print(f"Se escribió {args.output_file} con decoder_id={hex(dec_id)} y channels={args.channels}")
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("output_file", type=Path)
+    parser.add_argument("decoder_id")
+    parser.add_argument("channels", nargs="+", type=int)
+    parser.add_argument("--force", "-f", action="store_true")
+    args = parser.parse_args()
+
+    gen_secrets(args.output_file, args.decoder_id, args.channels, args.force)
+    print(f"Se escribió {args.output_file} con decoder_id={args.decoder_id} y channels={args.channels}")
 
 if __name__ == "__main__":
     main()
